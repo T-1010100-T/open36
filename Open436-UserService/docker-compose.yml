@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  user-service:
+    build: .
+    container_name: open436-user-service
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=postgresql://open436:open436_password@postgres:5432/open436
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+      - DEBUG=${DEBUG:-False}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost}
+      - CONSUL_URL=${CONSUL_URL:-http://consul:8500}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:8001}
+      - FILE_SERVICE_URL=${FILE_SERVICE_URL:-http://file-service:8007}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-change-me}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      - postgres
+      - consul
+    networks:
+      - open436-network
+
+  postgres:
+    image: postgres:14-alpine
+    container_name: open436-postgres-dev
+    environment:
+      POSTGRES_USER: open436
+      POSTGRES_PASSWORD: open436_password
+      POSTGRES_DB: open436
+    ports:
+      - "55432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/V1__create_users_tables.sql:/docker-entrypoint-initdb.d/01_init.sql
+    networks:
+      - open436-network
+
+  consul:
+    image: consul:1.16
+    container_name: open436-consul
+    ports:
+      - "8500:8500"
+    command: consul agent -dev -client=0.0.0.0 -ui
+    networks:
+      - open436-network
+
+volumes:
+  postgres_data:
+
+networks:
+  open436-network:
+    driver: bridge
