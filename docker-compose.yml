@@ -1,44 +1,300 @@
-version: '3.8'
+# ══════════════════════════════════════════════════════════
+#  Open436 全栈一键启动 Docker Compose
+#  使用: docker compose up -d
+#  含HOJ: docker compose --profile hoj up -d
+# ══════════════════════════════════════════════════════════
 
 services:
-  # PostgreSQL 数据库
+  # ──────────── 基础设施 ────────────
   postgres:
     image: postgres:14-alpine
-    container_name: section-service-db
+    container_name: open436-postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-open436}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-open436_password}
-      POSTGRES_DB: ${POSTGRES_DB:-open436}
-    ports:
-      - "55432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./db-init:/docker-entrypoint-initdb.d
+      POSTGRES_USER: ${PG_USER:-open436}
+      POSTGRES_PASSWORD: ${PG_PASS:-open436}
+      POSTGRES_DB: ${PG_DB:-open436}
+    ports: ["${PG_PORT:-55432}:5432"]
+    volumes: [postgres-data:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-open436}"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-open436}"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+    networks: [open436-net]
 
-  # 板块管理服务
-  section-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: section-service
+  redis:
+    image: redis:7-alpine
+    container_name: open436-redis
+    ports: ["${REDIS_PORT:-6379}:6379"]
+    networks: [open436-net]
+
+  consul:
+    image: hashicorp/consul:1.17
+    container_name: open436-consul
+    ports: ["${CONSUL_PORT:-8500}:8500"]
+    command: agent -server -ui -bootstrap-expect=1 -client=0.0.0.0
+    volumes: [consul-data:/consul/data]
+    networks: [open436-net]
+
+  minio:
+    image: minio/minio:latest
+    container_name: open436-minio
+    ports: ["${MINIO_API:-9000}:9000", "${MINIO_CONSOLE:-9001}:9001"]
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-open436}:${POSTGRES_PASSWORD:-open436_password}@postgres:5432/${POSTGRES_DB:-open436}
-      API_PREFIX: /api/v1
-      LOG_LEVEL: INFO
-    ports:
-      - "8005:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
+      MINIO_ROOT_USER: ${MINIO_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASS:-minioadmin}
+    command: server /data --console-address ":9001"
+    volumes: [minio-data:/data]
+    networks: [open436-net]
+
+  kong-db:
+    image: postgres:14-alpine
+    container_name: open436-kong-db
+    environment: { POSTGRES_USER: kong, POSTGRES_PASSWORD: kong, POSTGRES_DB: kong }
+    volumes: [kong-data:/var/lib/postgresql/data]
+    networks: [open436-net]
+
+  kong-migration:
+    image: kong:3.4
+    command: kong migrations bootstrap
+    environment: &kong-db-env
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: kong-db
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong
+    depends_on: [kong-db]
+    networks: [open436-net]
+    restart: on-failure
+
+  kong:
+    image: kong:3.4
+    container_name: open436-kong
+    environment:
+      <<: *kong-db-env
+      KONG_PLUGINS: bundled,satoken-auth
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+    ports: ["${KONG_PROXY:-8000}:8000", "${KONG_ADMIN:-8001}:8001"]
+    depends_on: [kong-migration, consul]
+    networks: [open436-net]
+    extra_hosts: ["host.docker.internal:host-gateway"]
     volumes:
-      - ./src:/app/src
+      - ./deploy/dev/kong/plugins/satoken-auth:/usr/local/share/lua/5.1/kong/plugins/satoken-auth
+
+  # ──────────── Java 后端 ────────────
+  auth:
+    build: { context: ./Open436-Auth, dockerfile: Dockerfile }
+    container_name: open436-auth
     restart: unless-stopped
+    ports: ["8081:8081"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+    networks: [open436-net]
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: jdbc:postgresql://postgres:5432/${PG_DB:-open436}
+      DB_USERNAME: ${PG_USER:-open436}
+      DB_PASSWORD: ${PG_PASS:-open436}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ""
+      CONSUL_HOST: consul
+      CONSUL_PORT: "8500"
+      HOJ_SYNC_URL: http://hoj-backend:6688
+
+  enrollment:
+    build: { context: ./Open436-Enrollment, dockerfile: Dockerfile }
+    container_name: open436-enrollment
+    restart: unless-stopped
+    ports: ["8084:8084"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+      auth: { condition: service_started }
+    networks: [open436-net]
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: jdbc:postgresql://postgres:5432/${PG_DB:-open436}
+      DB_USERNAME: ${PG_USER:-open436}
+      DB_PASSWORD: ${PG_PASS:-open436}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ""
+      CONSUL_HOST: consul
+      CONSUL_PORT: "8500"
+      AUTH_SERVICE_URL: http://auth:8081
+
+  # ──────────── Python 后端 ────────────
+  user-service:
+    build: ./Open436-UserService
+    container_name: open436-user
+    restart: unless-stopped
+    ports: ["8002:8002"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [open436-net]
+    environment: &django-env
+      DATABASE_URL: postgresql://${PG_USER:-open436}:${PG_PASS:-open436}@postgres:5432/${PG_DB:-open436}
+      SECRET_KEY: dev-secret-key
+      DEBUG: "False"
+      ALLOWED_HOSTS: "*"
+      CONSUL_URL: http://consul:8500
+      AUTH_SERVICE_URL: http://auth:8081
+      FILE_SERVICE_URL: http://file-service:8007
+      INTERNAL_API_KEY: dev-internal-key
+      SERVICE_PORT: "8002"
+      CONSUL_SERVICE_NAME: user-service
+      USER_SERVICE_URL: http://user-service:8002
+    command: >
+      sh -c "python manage.py migrate &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8002 --workers 4"
+
+  content-service:
+    build: ./Open436-ContentService
+    container_name: open436-content
+    restart: unless-stopped
+    ports: ["8003:8003"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [open436-net]
+    environment:
+      <<: *django-env
+      SERVICE_PORT: "8003"
+      CONSUL_SERVICE_NAME: content-service
+      USER_SERVICE_URL: http://user-service:8002
+      SECTION_SERVICE_URL: http://section-service:8005
+    command: >
+      sh -c "python manage.py migrate &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8003 --workers 4"
+
+  comment-service:
+    build: ./Open436-CommentService
+    container_name: open436-comment
+    restart: unless-stopped
+    ports: ["8004:8004"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [open436-net]
+    environment:
+      <<: *django-env
+      SERVICE_PORT: "8004"
+      CONSUL_SERVICE_NAME: comment-service
+      USER_SERVICE_URL: http://user-service:8002
+      CONTENT_SERVICE_URL: http://content-service:8003
+    command: >
+      sh -c "python manage.py migrate &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8004 --workers 4"
+
+  section-service:
+    build: ./Open436-SectionService
+    container_name: open436-section
+    restart: unless-stopped
+    ports: ["8005:8005"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [open436-net]
+    environment:
+      <<: *django-env
+      SERVICE_PORT: "8005"
+      CONSUL_SERVICE_NAME: section-service
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py register_consul &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8005 --workers 4"
+
+  file-service:
+    build: ./Open436-FileService
+    container_name: open436-file
+    restart: unless-stopped
+    ports: ["8007:8007"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [open436-net]
+    environment:
+      DATABASE_URL: postgresql://${PG_USER:-open436}:${PG_PASS:-open436}@postgres:5432/${PG_DB:-open436}
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "8007"
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_BUCKET: open436-posts
+      S3_ACCESS_KEY: ${MINIO_USER:-minioadmin}
+      S3_SECRET_KEY: ${MINIO_PASS:-minioadmin}
+      S3_PUBLIC_URL: http://localhost:${MINIO_API:-9000}
+      S3_PATH_STYLE: "true"
+      CONSUL_URL: http://consul:8500
+
+  # ──────────── HOJ 在线判题 (可选, --profile hoj) ────────────
+  hoj-mysql:
+    image: mysql:8.0
+    container_name: open436-hoj-mysql
+    profiles: [hoj]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${HOJ_MYSQL_PASS:-hoj123456}
+      MYSQL_DATABASE: hoj
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports: ["${HOJ_MYSQL_PORT:-3307}:3306"]
+    volumes: [hoj-mysql-data:/var/lib/mysql]
+    networks: [open436-net]
+
+  hoj-backend:
+    build: { context: ./Open436-hoj/hoj-springboot, dockerfile: Dockerfile.backend }
+    container_name: open436-hoj-backend
+    profiles: [hoj]
+    restart: unless-stopped
+    ports: ["6688:6688"]
+    depends_on: [hoj-mysql]
+    networks: [open436-net]
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://hoj-mysql:3306/hoj?useSSL=false&serverTimezone=Asia/Shanghai
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${HOJ_MYSQL_PASS:-hoj123456}
+
+  hoj-judge:
+    build: { context: ./Open436-hoj/hoj-springboot, dockerfile: Dockerfile.judge }
+    container_name: open436-hoj-judge
+    profiles: [hoj]
+    restart: unless-stopped
+    ports: ["8088:8088"]
+    depends_on: [hoj-mysql]
+    networks: [open436-net]
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://hoj-mysql:3306/hoj?useSSL=false&serverTimezone=Asia/Shanghai
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${HOJ_MYSQL_PASS:-hoj123456}
+
+  hoj-vue:
+    build: { context: ./Open436-hoj/hoj-vue, dockerfile: Dockerfile }
+    container_name: open436-hoj-vue
+    profiles: [hoj]
+    restart: unless-stopped
+    ports: ["8066:80"]
+    depends_on: [hoj-backend]
+    networks: [open436-net]
+
+  # ──────────── 前端 ────────────
+  frontend:
+    build: { context: ./Open436-Frontend, dockerfile: Dockerfile }
+    container_name: open436-frontend
+    restart: unless-stopped
+    ports: ["3000:80"]
+    depends_on: [kong]
+    networks: [open436-net]
+
+  admin:
+    build: { context: ./Open436-Admin, dockerfile: Dockerfile }
+    container_name: open436-admin
+    restart: unless-stopped
+    ports: ["3001:80"]
+    depends_on: [auth, enrollment]
+    networks: [open436-net]
 
 volumes:
-  postgres_data:
+  postgres-data:
+  consul-data:
+  minio-data:
+  kong-data:
+  hoj-mysql-data:
 
+networks:
+  open436-net:
+    driver: bridge

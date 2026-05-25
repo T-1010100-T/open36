@@ -78,11 +78,11 @@ const user = computed(() => {
     }
   }
   return {
-    id: route.params.id || '1', nickname: '前端小王', username: 'frontend_wang',
-    avatar: 'https://ui-avatars.com/api/?name=前端小王&background=1976D2&color=fff&size=120',
-    bio: '热爱前端技术，专注于 Vue.js 和性能优化。开源贡献者，技术博客写手。',
-    joinDate: '2025-03-15',
-    stats: { posts: 42, replies: 186, likes: 2340, favorites: 89 }
+    id: route.params.id || '1', nickname: '未知用户', username: '',
+    avatar: `https://ui-avatars.com/api/?name=U&background=1976D2&color=fff&size=120`,
+    bio: '',
+    joinDate: '',
+    stats: { posts: 0, replies: 0, likes: 0, favorites: 0 }
   }
 })
 
@@ -107,17 +107,9 @@ watch(() => route.params.id, () => {
   fetchAlgoStats()
 })
 
-const posts = ref([
-  { id: 1, title: 'Vue 3 Composition API 最佳实践总结', createdAt: '2026-05-19T10:30:00', votes: 128, replyCount: 32 },
-  { id: 2, title: '前端性能优化实战：从 8s 到 1s 的优化之路', createdAt: '2026-05-10T14:00:00', votes: 89, replyCount: 24 },
-  { id: 3, title: 'Pinia 状态管理进阶：自定义插件开发指南', createdAt: '2026-04-28T09:00:00', votes: 56, replyCount: 15 }
-])
+const posts = ref([])
 
-const replies = ref([
-  { id: 1, postTitle: '2026年前端开发趋势预测', content: '非常认同关于 AI 辅助编程的观点，我在实际工作中已经深刻感受到了效率提升，但也需要注意代码质量把控。', createdAt: '2026-05-18T16:00:00', votes: 18 },
-  { id: 2, postTitle: 'Vite 构建速度突然变慢怎么排查？', content: '建议检查一下是否有循环依赖的问题，可以用 rollup-plugin-visualizer 来分析包的依赖关系。', createdAt: '2026-05-17T13:00:00', votes: 12 },
-  { id: 3, postTitle: '如何优雅地处理前端错误边界？', content: '补充一点：在 Vue 3 中还可以配合 Suspense 组件来处理异步组件的错误状态，体验会更好。', createdAt: '2026-05-09T15:00:00', votes: 8 }
-])
+const replies = ref([])
 </script>
 
 <style scoped>

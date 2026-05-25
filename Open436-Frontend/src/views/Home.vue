@@ -65,17 +65,17 @@
     <section class="stats">
       <div class="stats-inner">
         <div class="stat-item">
-          <div class="stat-num">200+</div>
+          <div class="stat-num">0</div>
           <div class="stat-label">社区成员</div>
         </div>
         <div class="stat-divider"></div>
         <div class="stat-item">
-          <div class="stat-num">1,000+</div>
+          <div class="stat-num">0</div>
           <div class="stat-label">技术帖子</div>
         </div>
         <div class="stat-divider"></div>
         <div class="stat-item">
-          <div class="stat-num">5,000+</div>
+          <div class="stat-num">0</div>
           <div class="stat-label">算法题解</div>
         </div>
         <div class="stat-divider"></div>

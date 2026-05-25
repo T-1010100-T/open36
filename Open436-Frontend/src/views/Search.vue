@@ -48,13 +48,7 @@ const query = computed(() => route.query.q || '')
 const activeSection = ref('all')
 const suggestions = ['Vue 3', 'TypeScript', '性能优化', 'Docker', 'CSS']
 
-const results = ref([
-  { id: 1, title: 'Vue 3 Composition API 最佳实践总结', content: '本文总结了在实际项目中使用 Vue 3 Composition API 的经验，包括响应式数据管理、自定义 Hooks 设计、性能优化技巧等核心内容', author: '前端小王', section: 'tech', createdAt: '2026-05-19T10:30:00' },
-  { id: 2, title: 'Pinia 和 Vuex 5 该选哪个？', content: '新项目启动在即，状态管理库的选择让我纠结。Pinia 已经成为 Vue 官方推荐，但 Vuex 5 似乎也有不少改进', author: '选择困难症', section: 'question', createdAt: '2026-05-14T14:00:00' },
-  { id: 8, title: 'Rust + WebAssembly 在前端的实际应用案例', content: '分享我们将图像处理核心逻辑用 Rust 重写并编译为 WASM 的完整过程，性能提升超过 10 倍', author: '性能狂魔', section: 'tech', createdAt: '2026-05-15T15:30:00' },
-  { id: 17, title: 'CSS Container Queries 实战体验', content: '容器查询终于得到了所有主流浏览器的支持！本文通过实际项目案例展示如何用容器查询替代媒体查询', author: 'CSS布道者', section: 'tech', createdAt: '2026-05-11T09:30:00' },
-  { id: 20, title: '如何优雅地处理前端错误边界？', content: '错误边界是提升用户体验的关键。本文对比 Vue 3 的 onErrorCaptured 与 React Error Boundary 的设计差异', author: '架构思考者', section: 'tech', createdAt: '2026-05-09T10:00:00' }
-])
+const results = ref([])
 
 const filteredResults = computed(() => {
   if (activeSection.value === 'all') return results.value

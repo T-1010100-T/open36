@@ -99,29 +99,12 @@ const CommentNode = defineComponent({
   }
 })
 
-const post = ref({
-  id: route.params.id, title: 'Vue 3 Composition API 最佳实践总结',
-  author: '前端小王', section: 'tech', votes: 128, createdAt: '2026-05-19T10:30:00',
-  content: `## 前言\n\n在 Vue 3 中，Composition API 带来了全新的代码组织方式。本文将分享在实际项目中总结的最佳实践。\n\n### 1. 逻辑复用优先使用 Composables\n\n将可复用逻辑封装为 \`useXXX\` 函数，比 Mixin 更清晰、更类型安全。\n\n\`\`\`js\nfunction useCounter(initial = 0) {\n  const count = ref(initial)\n  const increment = () => count.value++\n  return { count, increment }\n}\n\`\`\`\n\n### 2. 响应式数据选择\n\n- 基础类型用 \`ref()\`\n- 对象/数组用 \`reactive()\`\n- 从 \`reactive()\` 解构会丢失响应性，需用 \`toRefs()\`\n\n### 3. 组件通信模式\n\n> Props down, events up. 对于跨层级通信，优先使用 provide/inject。\n\n希望这些实践能帮助你写出更优雅的 Vue 3 代码！`
-})
+const post = ref(null)
 
 const sectionName = computed(() => sectionStore.getSection(post.value.section)?.name || '')
 const postHtml = computed(() => markdownToHtml(post.value.content))
 
-const comments = ref([
-  { id: 1, author: '技术观察者', content: '写得非常好！关于 Composables 的封装原则，我觉得还可以补充一点：尽量保持每个 Composable 的职责单一。', createdAt: '2026-05-19T11:00:00', children: [
-    { id: 2, author: '前端小王', content: '感谢补充！确实单一职责很重要，我在实际项目中也深有体会。', createdAt: '2026-05-19T11:15:00', children: [
-      { id: 3, author: 'TS爱好者', content: '推荐结合 TypeScript 的泛型来约束 Composable 的输入输出类型，开发体验会好很多。', createdAt: '2026-05-19T12:00:00', children: [] }
-    ] }
-  ] },
-  { id: 4, author: '性能狂魔', content: '建议再加一条关于性能的实践：computed 缓存和 watchEffect 的清理函数。这两点在大列表渲染场景下特别关键。', createdAt: '2026-05-19T13:00:00', children: [
-    { id: 5, author: '前端小王', content: '好建议！我会在后续更新中补充性能优化相关的章节。', createdAt: '2026-05-19T13:30:00', children: [] }
-  ] },
-  { id: 6, author: '远程老司机', content: '感谢分享，已经收藏了。我之前一直在用 Options API，看完这篇文章准备在新项目中试试 Composition API。', createdAt: '2026-05-19T14:00:00', children: [] },
-  { id: 7, author: 'CSS布道者', content: '关于 toRefs 那条，其实也可以用 computed 来代替解构，这样更灵活。', createdAt: '2026-05-19T15:00:00', children: [
-    { id: 8, author: '架构思考者', content: 'computed 确实更灵活，但在简单场景下 toRefs 更直观。两种方式各有适用场景。', createdAt: '2026-05-19T15:30:00', children: [] }
-  ] }
-])
+const comments = ref([])
 
 const totalComments = computed(() => {
   function count(arr) { return arr.reduce((n, c) => n + 1 + count(c.children || []), 0) }

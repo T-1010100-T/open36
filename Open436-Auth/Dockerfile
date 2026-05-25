@@ -1,13 +1,13 @@
-FROM openjdk:21-slim
-
+# ── Open436 Auth Service ── 多阶段构建
+FROM maven:3.9-eclipse-temurin-21 AS builder
 WORKDIR /app
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+COPY src ./src
+RUN mvn package -DskipTests -B
 
-# 复制 JAR 文件
-COPY target/Open436-Auth-0.0.1-SNAPSHOT.jar app.jar
-
-# 暴露端口
-EXPOSE 8001
-
-# 启动应用
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+COPY --from=builder /app/target/Open436-Auth-0.0.1-SNAPSHOT.jar app.jar
+EXPOSE 8081
 ENTRYPOINT ["java", "-jar", "app.jar"]
-
