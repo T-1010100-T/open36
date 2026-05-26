@@ -27,6 +27,23 @@ request.interceptors.request.use(
       }
       config.headers['token'] = token
     }
+
+    // 注入用户身份 headers（供微服务 UserInfoMiddleware 读取）
+    const userStr = localStorage.getItem('open436_user')
+    if (userStr) {
+      try {
+        let user = JSON.parse(userStr)
+        // storage.js 可能二次序列化
+        if (typeof user === 'string') user = JSON.parse(user)
+        if (user?.id) config.headers['X-User-Id'] = String(user.id)
+        if (user?.username) config.headers['X-Username'] = user.username
+        if (user?.role) config.headers['X-User-Role'] = user.role
+        if (user?.status) config.headers['X-User-Status'] = user.status
+      } catch (e) {
+        // 解析失败忽略
+      }
+    }
+
     return config
   },
   (error) => {
@@ -38,14 +55,15 @@ request.interceptors.request.use(
 // 响应拦截器
 request.interceptors.response.use(
   (response) => {
-    // 统一处理响应数据
     const res = response.data
+    // 后端统一返回 {code, message, data} 格式，非 200 视为业务错误
+    if (res && typeof res.code === 'number' && res.code !== 200) {
+      return Promise.reject({ response: { data: res, status: res.code } })
+    }
     return res
   },
   (error) => {
-    // 统一处理错误响应
     if (error.response?.status === 401) {
-      // Token 过期或无效，清除登录态
       localStorage.removeItem('open436_token')
       localStorage.removeItem('open436_user')
     }

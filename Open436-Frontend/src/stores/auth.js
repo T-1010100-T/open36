@@ -12,7 +12,8 @@ export const useAuthStore = defineStore('auth', () => {
   const isAdmin = computed(() => user.value?.role === 'admin')
   const isGuest = computed(() => user.value?.status === 'pending')
   const isVisitor = computed(() => guestMode.value)
-  const isReadOnly = computed(() => user.value?.status === 'pending' || guestMode.value)
+  const isReadOnly = computed(() => user.value?.status === 'pending' || guestMode.value || !user.value)
+  const canPost = computed(() => !!user.value && user.value.status === 'active')
   const avatar = computed(() => user.value?.avatar || '')
   const nickname = computed(() => user.value?.nickname || '')
 
@@ -129,5 +130,5 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('open436_token')
   }
 
-  return { user, token, guestMode, isLoggedIn, isAdmin, isGuest, isVisitor, isReadOnly, avatar, nickname, login, register, fetchUser, logout, enterGuestMode, exitGuestMode, setUser, setToken, syncToHoj }
+  return { user, token, guestMode, isLoggedIn, isAdmin, isGuest, isVisitor, isReadOnly, canPost, avatar, nickname, login, register, fetchUser, logout, enterGuestMode, exitGuestMode, setUser, setToken, syncToHoj }
 })

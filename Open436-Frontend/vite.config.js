@@ -21,11 +21,28 @@ export default defineConfig({
     // 代理配置 - Open436 API 通过 Kong，HOJ 资源直连 HOJ 前端 devServer
     proxy: {
       '/api/auth': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8081',
         changeOrigin: true
       },
       '/api/enrollment': {
         target: 'http://localhost:8000',
+        changeOrigin: true
+      },
+      '/api/posts': {
+        target: 'http://localhost:8003',
+        changeOrigin: true
+      },
+      '/api/sections': {
+        target: 'http://localhost:8005',
+        changeOrigin: true
+      },
+      '/api/comments': {
+        target: 'http://localhost:8004',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/comments/, '/api')
+      },
+      '/api/users': {
+        target: 'http://localhost:8002',
         changeOrigin: true
       },
       '/api': {

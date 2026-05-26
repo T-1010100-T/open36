@@ -150,7 +150,10 @@ class Post(models.Model):
             return True
         if self.author_id != user_id:
             return False
-        hours_since_created = (timezone.now() - self.created_at).total_seconds() / 3600
+        created_at = self.created_at
+        if timezone.is_naive(created_at):
+            created_at = timezone.make_aware(created_at)
+        hours_since_created = (timezone.now() - created_at).total_seconds() / 3600
         if hours_since_created <= 24:
             return True
         return self.edit_count < 5

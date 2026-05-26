@@ -28,7 +28,7 @@
           </div>
           <div class="form-actions">
             <button class="btn btn-text" @click="router.back()">取消</button>
-            <button class="btn btn-primary" @click="submitPost" :disabled="!canSubmit">发布帖子</button>
+            <button class="btn btn-primary" @click="submitPost" :disabled="!canSubmit || submitting">{{ submitting ? '发布中...' : '发布帖子' }}</button>
           </div>
         </div>
       </div>
@@ -37,17 +37,21 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import ForumHeader from '@/components/ForumHeader.vue'
 import AppSidebar from '@/components/AppSidebar.vue'
 import { useSectionStore } from '@/stores/section'
 import { useUIStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
 import { markdownToHtml } from '@/utils/format'
+import { createPost } from '@/api/post'
 
 const router = useRouter()
 const sectionStore = useSectionStore()
 const ui = useUIStore()
+const auth = useAuthStore()
+const submitting = ref(false)
 const form = ref({ title: '', section: 'tech', content: '' })
 const editorRef = ref(null)
 
@@ -65,14 +69,50 @@ const toolbar = [
 const previewHtml = computed(() => markdownToHtml(form.value.content))
 const canSubmit = computed(() => form.value.title.trim() && form.value.content.trim() && form.value.section)
 
+onMounted(() => {
+  if (!auth.canPost) {
+    ui.showToast('请先登录后再发帖', 'warning')
+    router.push('/login')
+    return
+  }
+  sectionStore.fetchSections()
+})
+
 function insertMarkdown(syntax) {
   form.value.content += syntax
 }
 
-function submitPost() {
+async function submitPost() {
   if (!canSubmit.value) { ui.showToast('请填写完整内容', 'warning'); return }
-  ui.showToast('发布成功！', 'success')
-  router.push('/post/1')
+  if (submitting.value) return
+  submitting.value = true
+  try {
+    let sectionId = sectionStore.getSectionId(form.value.section)
+    if (!sectionId) {
+      await sectionStore.fetchSections()
+      sectionId = sectionStore.getSectionId(form.value.section)
+    }
+    if (!sectionId) {
+      ui.showToast('板块信息异常，请刷新重试', 'error')
+      return
+    }
+    const payload = {
+      title: form.value.title.trim(),
+      content: form.value.content.trim(),
+      section_id: sectionId
+    }
+    const res = await createPost(payload)
+    const postId = res?.data?.id
+    ui.showToast('发布成功！', 'success')
+    router.push('/forum')
+  } catch (e) {
+    const errData = e?.response?.data
+    const msg = errData?.message || '发布失败，请稍后重试'
+    const details = errData?.errors ? Object.values(errData.errors).flat().join('; ') : ''
+    ui.showToast(details ? `${msg}: ${details}` : msg, 'error')
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 
