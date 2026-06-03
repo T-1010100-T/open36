@@ -106,9 +106,9 @@ export default {
             this.$store.dispatch("clearUserInfoAndToken");
             let path = this.$route.path;
             if (path.startsWith("/admin")) {
-              if (path != "/admin/login") {
+              if (path != "/admin/dashboard") {
                 this.$router.replace({
-                  path: "/admin/login",
+                  path: "/admin/dashboard",
                 });
               }
             } else {

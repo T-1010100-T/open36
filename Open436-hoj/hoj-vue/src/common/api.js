@@ -103,7 +103,7 @@ axios.interceptors.response.use(
             }
           }
           if (error.response.config.headers['Url-Type'] === 'admin') {
-            router.push("/admin/login")
+            router.push("/admin/dashboard")
           } else {
             store.commit('changeModalStatus', { mode: 'Login', visible: true });
           }

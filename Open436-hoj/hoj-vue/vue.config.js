@@ -110,8 +110,11 @@ module.exports={
         if (isProduction || devNeedCdn) args[0].cdn = cdn
         return args
     })
-    config.plugin('webpack-bundle-analyzer') // 查看打包文件体积大小
-      .use(require('webpack-bundle-analyzer').BundleAnalyzerPlugin)
+    // Bundle Analyzer 仅在 ANALYZE=true 时启用，避免 Docker 构建阻塞
+    if (process.env.ANALYZE === 'true') {
+      config.plugin('webpack-bundle-analyzer')
+        .use(require('webpack-bundle-analyzer').BundleAnalyzerPlugin)
+    }
     // ============注入cdn end============
 
   },

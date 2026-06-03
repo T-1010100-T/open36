@@ -248,6 +248,12 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://hoj-mysql:3306/hoj?useSSL=false&serverTimezone=Asia/Shanghai
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: ${HOJ_MYSQL_PASS:-hoj123456}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ""
+      MYSQL_HOST: hoj-mysql
+      MYSQL_PORT: "3306"
+      HOJ_OPEN436_API_KEY: ${HOJ_API_KEY:-open436-secret-key}
 
   hoj-judge:
     build: { context: ./Open436-hoj/hoj-springboot, dockerfile: Dockerfile.judge }

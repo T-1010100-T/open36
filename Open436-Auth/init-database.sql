@@ -189,7 +189,7 @@ ON CONFLICT (role_id, permission_id) DO NOTHING;
 -- BCrypt 加密后的哈希值（cost=10）
 -- 注意：这是示例密码，生产环境请修改
 INSERT INTO users_auth (username, password_hash, status) VALUES
-('admin', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z2EHMnjtdFcdQwPcn2WBhZKi', 'active')
+('admin', '$2a$10$N5u9SIi1PpAXBzfFCF2Bwe4wrY5uD5d0pPD29uHj3NMd9G9SAdIbe', 'active')
 ON CONFLICT (username) DO NOTHING;
 
 -- 分配管理员角色

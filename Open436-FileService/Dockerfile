@@ -1,9 +1,10 @@
-FROM rust:1.70 as builder
+FROM rust:latest as builder
 
 WORKDIR /app
 
 # 复制依赖文件
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
+RUN cargo generate-lockfile || true
 
 # 复制源代码
 COPY src ./src

@@ -79,7 +79,8 @@ const openHojAdmin = async () => {
     } catch (e) {}
   }
   // 在当前页面跳转，直接进入 HOJ 管理后台 dashboard，不再经过 login 页
-  const url = `http://localhost:8066/algo/admin/dashboard?hoj_token=${encodeURIComponent(hojToken)}&username=${encodeURIComponent(username)}&role=${encodeURIComponent(role)}`
+  const hojVueBase = import.meta.env.VITE_HOJ_VUE_URL || `${window.location.protocol}//${window.location.hostname}:8066`
+  const url = `${hojVueBase}/algo/admin/dashboard?hoj_token=${encodeURIComponent(hojToken)}&username=${encodeURIComponent(username)}&role=${encodeURIComponent(role)}`
   window.location.href = url
 }
 

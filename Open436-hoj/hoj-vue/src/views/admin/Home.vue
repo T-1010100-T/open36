@@ -550,7 +550,8 @@ export default {
     handleCommand(command) {
       if (command === 'logout') {
         api.admin_logout().then((res) => {
-          this.$router.push({ path: '/admin/login' });
+          // 退出后跳回 Open436 管理端，而非 HOJ 登录页
+          window.location.href = '/algo/';
           mMessage.success(this.$i18n.t('m.Log_Out_Successfully'));
           this.$store.commit('clearUserInfoAndToken');
         });

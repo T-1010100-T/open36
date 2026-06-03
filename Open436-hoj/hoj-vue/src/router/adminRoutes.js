@@ -1,6 +1,5 @@
 
 // 引入 view 组件
-const Login= ()=>import('@/views/admin/Login')
 const Home= ()=>import('@/views/admin/Home')
 const Dashboard= ()=>import('@/views/admin/Dashboard')
 const User= ()=>import('@/views/admin/general/User')
@@ -21,12 +20,6 @@ const TrainingProblemList= ()=>import('@/views/admin/training/TrainingProblemLis
 const TrainingCategory= ()=>import('@/views/admin/training/Category')
 const DiscussionList= ()=>import('@/views/admin/discussion/Discussion')
 const adminRoutes= [
-    {
-      path: '/admin/login',
-      name: 'admin-login',
-      component: Login,
-      meta: { title: 'Login' }
-    },
     {
       path: '/admin/',
       component: Home,
@@ -191,7 +184,7 @@ const adminRoutes= [
       ]
     },
     {
-      path: '/admin/*', redirect: '/admin/login'
+      path: '/admin/*', redirect: '/admin/dashboard'
     }
   ]
 

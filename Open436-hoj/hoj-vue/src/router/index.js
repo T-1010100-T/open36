@@ -73,7 +73,7 @@ router.beforeEach((to, from, next) => {
         }else{ // 没有超级管理员权限 全部返回登录页，并且清除缓存
           if(to.path.split('/')[1]==='admin'){ //管理端
             next({
-              path: '/admin/login' 
+              path: '/admin/dashboard'
             })
             mMessage.error(i18n.t('m.Please_login_first_by_admin_account'))
           }else{ // oj端
@@ -91,7 +91,7 @@ router.beforeEach((to, from, next) => {
         }else{ // 没有管理员权限 全部返回登录页，并且清除缓存
           if(to.path.split('/')[1]==='admin'){ // 管理端
             next({
-              path: '/admin/login' 
+              path: '/admin/dashboard'
             })
             mMessage.error(i18n.t('m.Please_login_first_by_admin_account'))
           }else{
@@ -111,7 +111,7 @@ router.beforeEach((to, from, next) => {
 
       if(to.path.split('/')[1]==='admin'){
         next({
-          path: '/admin/login'  // 管理端无token认证返回登录页
+          path: '/admin/dashboard'  // 管理端无token认证跳转到 dashboard（由 Open436 SSO 处理认证）
         })
       }else{
         next({

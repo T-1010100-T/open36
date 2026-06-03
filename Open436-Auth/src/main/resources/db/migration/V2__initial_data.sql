@@ -60,7 +60,7 @@ FROM permissions;
 -- 密码: admin123
 -- BCrypt 加密后的哈希值（cost=10）
 INSERT INTO users_auth (username, password_hash, status) VALUES
-('admin', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z2EHMnjtdFcdQwPcn2WBhZKi', 'active');
+('admin', '$2a$10$N5u9SIi1PpAXBzfFCF2Bwe4wrY5uD5d0pPD29uHj3NMd9G9SAdIbe', 'active');
 
 -- 分配管理员角色
 INSERT INTO user_roles (user_id, role_id)
