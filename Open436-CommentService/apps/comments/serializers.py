@@ -2,7 +2,7 @@
 Comment serializers
 """
 from rest_framework import serializers
-from .models import Reply, PostLike, PostFavorite
+from .models import Reply, PostLike, PostFavorite, ReplyLike
 
 
 class ReplyListSerializer(serializers.ModelSerializer):
@@ -12,13 +12,15 @@ class ReplyListSerializer(serializers.ModelSerializer):
     is_edited = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()
+    likes_count = serializers.SerializerMethodField()
+    is_liked = serializers.SerializerMethodField()
 
     class Meta:
         model = Reply
         fields = [
-            'id', 'post_id', 'author', 'content', 'floor_number',
+            'id', 'post_id', 'parent_id', 'author', 'content', 'floor_number',
             'is_deleted', 'edit_count', 'last_edited_at',
-            'is_edited', 'can_edit', 'can_delete',
+            'is_edited', 'can_edit', 'can_delete', 'likes_count', 'is_liked',
             'created_at', 'updated_at',
         ]
 
@@ -49,15 +51,28 @@ class ReplyListSerializer(serializers.ModelSerializer):
             return True
         return obj.author_id == getattr(request, 'user_id', None)
 
+    def get_likes_count(self, obj):
+        return ReplyLike.objects.filter(reply_id=obj.id).count()
+
+    def get_is_liked(self, obj):
+        request = self.context.get('request')
+        if not request:
+            return False
+        user_id = getattr(request, 'user_id', None)
+        if not user_id:
+            return False
+        return ReplyLike.objects.filter(reply_id=obj.id, user_id=user_id).exists()
+
 
 class ReplyCreateSerializer(serializers.ModelSerializer):
     """创建回复序列化器"""
 
     content = serializers.CharField()
+    parent_id = serializers.IntegerField(required=False, allow_null=True, default=None)
 
     class Meta:
         model = Reply
-        fields = ['content']
+        fields = ['content', 'parent_id']
 
     def validate_content(self, value):
         value = value.strip()

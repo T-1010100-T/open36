@@ -36,15 +36,25 @@
 import { ref } from 'vue'
 import { copyToClipboard } from '@/utils/format'
 import { useUIStore } from '@/stores/ui'
+import { recordShare } from '@/api/comment'
 
 const ui = useUIStore()
 const visible = ref(false)
 const shareUrl = ref('')
+const postId = ref(null)
 
-function open(url) { shareUrl.value = url || window.location.href; visible.value = true }
+function open(url, id) { shareUrl.value = url || window.location.href; postId.value = id; visible.value = true }
 function close() { visible.value = false }
+
+function trackShare(type) {
+  if (postId.value) {
+    recordShare(postId.value, type).catch(() => {})
+  }
+}
+
 function copyLink() {
   copyToClipboard(shareUrl.value)
+  trackShare('link')
   ui.showToast('已复制到剪贴板', 'success')
   close()
 }
@@ -53,6 +63,7 @@ function shareTo(platform) {
     weibo: `https://service.weibo.com/share/share.php?url=${encodeURIComponent(shareUrl.value)}`,
     qq: `https://connect.qq.com/widget/shareqq/index.html?url=${encodeURIComponent(shareUrl.value)}`
   }
+  trackShare(platform)
   if (urls[platform]) window.open(urls[platform], '_blank', 'width=600,height=500')
   close()
 }

@@ -32,7 +32,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
                 {{ favorited ? '已收藏' : '收藏' }}
               </button>
-              <button class="action-btn" @click="shareRef.open()">
+              <button class="action-btn" @click="shareRef.open(null, post?.id)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
                 分享
               </button>
@@ -41,27 +41,62 @@
           </div>
         </div>
         <div class="card" style="margin-top: var(--s-base)">
-          <div class="card-header">评论 ({{ comments.length }})</div>
+          <div class="card-header">评论 ({{ flatComments.length }})</div>
           <div v-if="auth.canPost" class="comment-form">
-            <textarea v-model="newComment" class="form-textarea" placeholder="写下你的评论..." rows="3"></textarea>
+            <div v-if="replyTo" class="reply-to-bar">
+              回复 #{{ replyTo.floor }} {{ replyTo.author }}
+              <button class="cancel-reply" @click="cancelReply">取消</button>
+            </div>
+            <textarea v-model="newComment" class="form-textarea" :placeholder="replyTo ? `回复 #${replyTo.floor}...` : '写下你的评论...'" rows="3"></textarea>
             <button class="btn btn-primary btn-sm" style="margin-top: var(--s-sm)" @click="submitComment" :disabled="commentLoading">
-              {{ commentLoading ? '发送中...' : '发表评论' }}
+              {{ commentLoading ? '发送中...' : (replyTo ? '回复' : '发表评论') }}
             </button>
           </div>
           <div v-else class="guest-comment-tip">
             <span>登录后可发表评论</span>
           </div>
           <div class="comments-list">
-            <div v-for="c in comments" :key="c.id" class="comment-item">
-              <div class="comment-header">
-                <img :src="`https://ui-avatars.com/api/?name=${c.author}&background=1976D2&color=fff&size=32`" class="avatar avatar-sm" />
-                <span class="comment-author">u/{{ c.author }}</span>
-                <span class="comment-floor">#{{ c.floor }}</span>
-                <span class="comment-time">{{ formatDate(c.createdAt) }}</span>
+            <template v-for="c in commentTree" :key="c.id">
+              <div class="comment-item">
+                <div class="comment-header">
+                  <img :src="`https://ui-avatars.com/api/?name=${c.author}&background=1976D2&color=fff&size=32`" class="avatar avatar-sm" />
+                  <span class="comment-author">u/{{ c.author }}</span>
+                  <span class="comment-floor">#{{ c.floor }}</span>
+                  <span class="comment-time">{{ formatDate(c.createdAt) }}</span>
+                </div>
+                <div class="comment-body">{{ c.content }}</div>
+                <div class="comment-actions">
+                  <button v-if="auth.canPost" class="comment-action-btn" :class="{ active: c.isLiked }" @click="handleReplyLike(c)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+                    {{ c.likesCount || '' }}
+                  </button>
+                  <button v-if="auth.canPost" class="comment-action-btn" @click="startReply(c)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    回复
+                  </button>
+                </div>
               </div>
-              <div class="comment-body">{{ c.content }}</div>
-            </div>
-            <div v-if="comments.length === 0 && !commentLoading" class="empty-state" style="padding: var(--s-xl)">
+              <div v-for="child in c.children" :key="child.id" class="comment-item nested">
+                <div class="comment-header">
+                  <img :src="`https://ui-avatars.com/api/?name=${child.author}&background=1976D2&color=fff&size=28`" class="avatar avatar-xs" />
+                  <span class="comment-author">u/{{ child.author }}</span>
+                  <span class="comment-time">{{ formatDate(child.createdAt) }}</span>
+                  <span class="reply-indicator">回复 #{{ c.floor }}</span>
+                </div>
+                <div class="comment-body">{{ child.content }}</div>
+                <div class="comment-actions">
+                  <button v-if="auth.canPost" class="comment-action-btn" :class="{ active: child.isLiked }" @click="handleReplyLike(child)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+                    {{ child.likesCount || '' }}
+                  </button>
+                  <button v-if="auth.canPost" class="comment-action-btn" @click="startReply(child)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    回复
+                  </button>
+                </div>
+              </div>
+            </template>
+            <div v-if="flatComments.length === 0 && !commentLoading" class="empty-state" style="padding: var(--s-xl)">
               <p style="font-size: 13px">暂无评论，快来抢沙发吧</p>
             </div>
           </div>
@@ -83,7 +118,7 @@ import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 import { formatDate, markdownToHtml } from '@/utils/format'
 import { getPost } from '@/api/post'
-import { getReplies, createReply, toggleLike, toggleFavorite } from '@/api/comment'
+import { getReplies, createReply, toggleLike, toggleFavorite, toggleReplyLike, getInteractionStatus } from '@/api/comment'
 
 const route = useRoute()
 const sectionStore = useSectionStore()
@@ -96,7 +131,9 @@ const newComment = ref('')
 const loading = ref(false)
 const post = ref(null)
 const fetchError = ref('')
-const comments = ref([])
+const flatComments = ref([])
+const commentTree = ref([])
+const replyTo = ref(null)
 const commentLoading = ref(false)
 const actionLoading = ref({ like: false, favorite: false })
 
@@ -119,9 +156,8 @@ async function fetchPost(id) {
         votes: raw.likes_count || 0,
         createdAt: raw.created_at
       }
-      liked.value = false
-      favorited.value = false
       await fetchReplies(id)
+      await fetchInteractionStatus(id)
     } else {
       post.value = null
     }
@@ -140,16 +176,72 @@ async function fetchReplies(postId) {
     const res = await getReplies(postId)
     const data = res?.data || res || {}
     const results = data.results || []
-    comments.value = results.map(r => ({
+    const mapped = results.map(r => ({
       id: r.id,
+      parentId: r.parent_id,
       author: r.author?.nickname || `用户${r.author?.user_id || ''}`,
       content: r.content,
       floor: r.floor_number,
-      createdAt: r.created_at
+      createdAt: r.created_at,
+      likesCount: r.likes_count || 0,
+      isLiked: !!r.is_liked,
+      children: []
     }))
+    flatComments.value = mapped
+    buildCommentTree(mapped)
   } catch (e) {
     console.warn('Failed to fetch replies:', e)
-    comments.value = []
+    flatComments.value = []
+    commentTree.value = []
+  }
+}
+
+function buildCommentTree(flat) {
+  const map = {}
+  const roots = []
+  flat.forEach(c => { map[c.id] = c })
+  flat.forEach(c => {
+    c.children = []
+    if (c.parentId && map[c.parentId]) {
+      map[c.parentId].children.push(c)
+    } else {
+      roots.push(c)
+    }
+  })
+  commentTree.value = roots
+}
+
+async function fetchInteractionStatus(postId) {
+  try {
+    const res = await getInteractionStatus(postId)
+    const data = res?.data || res || {}
+    liked.value = !!data.is_liked
+    favorited.value = !!data.is_favorited
+    if (data.likes_count !== undefined && post.value) {
+      post.value.votes = data.likes_count
+    }
+  } catch (e) {
+    console.warn('Failed to fetch interaction status:', e)
+  }
+}
+
+function startReply(comment) {
+  replyTo.value = { id: comment.id, floor: comment.floor, author: comment.author }
+}
+
+function cancelReply() {
+  replyTo.value = null
+}
+
+async function handleReplyLike(comment) {
+  if (!auth.canPost) return
+  try {
+    const res = await toggleReplyLike(comment.id)
+    const data = res?.data || {}
+    if (data.is_liked !== undefined) comment.isLiked = data.is_liked
+    if (data.likes_count !== undefined) comment.likesCount = data.likes_count
+  } catch (e) {
+    console.warn('Reply like failed:', e)
   }
 }
 
@@ -158,13 +250,13 @@ async function handleLike() {
   actionLoading.value.like = true
   try {
     const res = await toggleLike(post.value.id)
+    const data = res?.data || {}
     const msg = res?.message || ''
-    if (msg.includes('成功') || msg.includes('点赞')) {
-      liked.value = true
-      post.value.votes++
-    } else if (msg.includes('取消')) {
-      liked.value = false
-      post.value.votes = Math.max(0, post.value.votes - 1)
+    if (data.is_liked !== undefined) {
+      liked.value = data.is_liked
+    }
+    if (data.likes_count !== undefined) {
+      post.value.votes = data.likes_count
     }
     ui.showToast(msg, liked.value ? 'success' : 'info')
   } catch (e) {
@@ -180,11 +272,10 @@ async function handleFavorite() {
   actionLoading.value.favorite = true
   try {
     const res = await toggleFavorite(post.value.id)
+    const data = res?.data || {}
     const msg = res?.message || ''
-    if (msg.includes('成功') || msg.includes('收藏')) {
-      favorited.value = true
-    } else if (msg.includes('取消')) {
-      favorited.value = false
+    if (data.is_favorited !== undefined) {
+      favorited.value = data.is_favorited
     }
     ui.showToast(msg, favorited.value ? 'success' : 'info')
   } catch (e) {
@@ -199,9 +290,13 @@ async function submitComment() {
   if (!newComment.value.trim()) { ui.showToast('请输入评论内容', 'warning'); return }
   commentLoading.value = true
   try {
-    await createReply({ post_id: post.value.id, content: newComment.value.trim() })
+    const isReply = !!replyTo.value
+    const payload = { post_id: post.value.id, content: newComment.value.trim() }
+    if (replyTo.value) payload.parent_id = replyTo.value.id
+    await createReply(payload)
     newComment.value = ''
-    ui.showToast('评论成功', 'success')
+    replyTo.value = null
+    ui.showToast(isReply ? '回复成功' : '评论成功', 'success')
     await fetchReplies(post.value.id)
   } catch (e) {
     const msg = e?.response?.data?.message || '评论失败'
@@ -254,5 +349,24 @@ watch(() => route.params.id, (newId) => {
 .comment-floor { font-size: 11px; color: var(--primary); background: var(--primary-bg); padding: 1px 6px; border-radius: 999px; }
 .comment-time { font-size: 12px; color: var(--text-secondary); }
 .comment-body { font-size: 14px; line-height: 1.6; padding-left: 40px; }
+.comment-item.nested { padding-left: 48px; background: var(--bg-secondary); border-radius: 0; }
+.comment-item.nested .comment-body { padding-left: 36px; }
+.comment-actions { display: flex; gap: var(--s-sm); padding-left: 40px; margin-top: var(--s-xs); }
+.comment-item.nested .comment-actions { padding-left: 36px; }
+.comment-action-btn {
+  display: inline-flex; align-items: center; gap: 3px; font-size: 12px;
+  color: var(--text-disabled); transition: color var(--t-fast);
+}
+.comment-action-btn:hover { color: var(--text-secondary); }
+.comment-action-btn.active { color: var(--primary); }
+.reply-indicator { font-size: 11px; color: var(--primary); opacity: 0.7; }
+.reply-to-bar {
+  display: flex; align-items: center; gap: var(--s-sm); font-size: 13px;
+  color: var(--primary); margin-bottom: var(--s-sm); padding: var(--s-xs) var(--s-sm);
+  background: var(--primary-bg); border-radius: var(--r-sm);
+}
+.cancel-reply { margin-left: auto; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+.cancel-reply:hover { color: var(--error); }
+.avatar-xs { width: 24px; height: 24px; border-radius: 50%; }
 .empty-state { text-align: center; padding: var(--s-3xl); color: var(--text-secondary); }
 </style>

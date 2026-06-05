@@ -49,6 +49,38 @@ class InternalPostViewSet(viewsets.GenericViewSet):
             resp, code = error_response('帖子不存在', code=40401, status_code=404)
             return Response(resp, status=code)
 
+    @action(detail=False, methods=['get'], url_path='batch')
+    def batch_info(self, request):
+        """批量获取帖子基础信息（供其他服务调用）"""
+        ids_param = request.query_params.get('ids', '')
+        if not ids_param:
+            resp, code = error_response('缺少 ids 参数', code=400, status_code=400)
+            return Response(resp, status=code)
+
+        try:
+            ids = [int(i.strip()) for i in ids_param.split(',') if i.strip()]
+        except (ValueError, TypeError):
+            resp, code = error_response('ids 参数格式错误', code=400, status_code=400)
+            return Response(resp, status=code)
+
+        if len(ids) > 100:
+            resp, code = error_response('单次最多查询100条', code=400, status_code=400)
+            return Response(resp, status=code)
+
+        posts = Post.objects.filter(id__in=ids, status=Post.STATUS_PUBLISHED)
+        result = {}
+        for p in posts:
+            result[p.id] = {
+                'id': p.id,
+                'title': p.title,
+                'author_id': p.author_id,
+                'section_id': p.section_id,
+                'created_at': p.created_at.isoformat() if p.created_at else None,
+                'views_count': p.views_count,
+            }
+
+        return Response(success_response(data={'posts': result}))
+
     @action(detail=False, methods=['get'], url_path='by-user/(?P<user_id>[^/.]+)')
     def by_user(self, request, user_id=None):
         """获取用户帖子列表"""
