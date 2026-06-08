@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     SECTION_SERVICE_URL: str = 'http://localhost:8005'
     USER_SERVICE_URL: str = 'http://localhost:8002'
     HOJ_API_URL: str = 'http://localhost:6688'
+    CRAWLER_SERVICE_URL: str = 'http://localhost:8009'
 
     # HOJ管理员账号
     HOJ_ADMIN_USER: str = 'admin'

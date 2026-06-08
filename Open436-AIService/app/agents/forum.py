@@ -261,3 +261,121 @@ async def execute_forum_task(user_message: str, user_id: int) -> dict:
             'tool_calls': [],
             'token_usage': {'input': 0, 'output': 0},
         }
+
+
+async def execute_forum_task_with_data(user_message: str, user_id: int, crawled_data: list[dict]) -> dict:
+    """
+    执行论坛任务（带爬取数据）- 纯加工模式
+
+    Router 已经调用爬虫收集好数据，Forum Agent 只负责：
+    1. 阅读爬取的原始数据
+    2. 总结沉淀成高质量帖子
+    3. 调用 create_post 发布
+
+    Args:
+        user_message: 用户原始请求
+        user_id: 管理员ID
+        crawled_data: 爬虫收集的页面数据列表 [{url, title, markdown, word_count}]
+    """
+    try:
+        # 将爬取数据格式化为上下文
+        context_parts = []
+        for i, page in enumerate(crawled_data[:10], 1):
+            title = page.get('title', '无标题')
+            url = page.get('url', '')
+            content = (page.get('markdown') or '')[:2000]
+            context_parts.append(f'--- 来源 {i}: {title} ({url}) ---\n{content}')
+
+        crawled_context = '\n\n'.join(context_parts) if context_parts else '（无爬取数据，请根据用户描述生成内容）'
+
+        enhanced_prompt = f"""用户请求: {user_message}
+
+以下是爬虫收集的相关资料（共{len(crawled_data)}篇）：
+{crawled_context}
+
+请基于以上资料，总结沉淀成一篇高质量的论坛帖子。要求：
+1. 综合多个来源的信息，不要直接复制
+2. 内容准确、有深度、有结构
+3. 使用 Markdown 格式
+4. 调用 list_sections 获取板块列表，选择最合适的板块
+5. 调用 create_post 发布帖子"""
+
+        messages = [
+            {'role': 'system', 'content': FORUM_SYSTEM_PROMPT},
+            {'role': 'user', 'content': enhanced_prompt},
+        ]
+
+        tool_calls_log = []
+        token_usage = {'input': 0, 'output': 0}
+
+        for _ in range(10):
+            data = await _call_llm(messages, FORUM_TOOLS_DEF)
+            usage = data.get('usage', {})
+            token_usage['input'] += usage.get('prompt_tokens', 0)
+            token_usage['output'] += usage.get('completion_tokens', 0)
+
+            choice = data['choices'][0]
+            message = choice['message']
+            finish_reason = choice.get('finish_reason', '')
+
+            if finish_reason == 'stop' or not message.get('tool_calls'):
+                return {
+                    'reply': message.get('content', ''),
+                    'tool_calls': tool_calls_log,
+                    'token_usage': token_usage,
+                }
+
+            messages.append(message)
+
+            for tc in message['tool_calls']:
+                tool_name = tc['function']['name']
+                tool_args_str = tc['function']['arguments']
+                tool_id = tc['id']
+
+                try:
+                    tool_args = json.loads(tool_args_str)
+                except json.JSONDecodeError:
+                    tool_args = {}
+
+                logger.info(f'Forum Agent调用工具: {tool_name}({tool_args})')
+                tool_func = FORUM_TOOLS_MAP.get(tool_name)
+
+                if not tool_func:
+                    tool_result = f'未知工具: {tool_name}'
+                    tool_calls_log.append({'tool_name': tool_name, 'status': 'failed', 'error': tool_result})
+                else:
+                    try:
+                        import time
+                        start = time.time()
+                        result = await tool_func.ainvoke(tool_args)
+                        duration = int((time.time() - start) * 1000)
+                        tool_result = str(result)
+                        tool_calls_log.append({
+                            'tool_name': tool_name,
+                            'status': 'success',
+                            'duration_ms': duration,
+                            'result_summary': tool_result[:200],
+                        })
+                    except Exception as e:
+                        tool_result = f'工具执行失败: {str(e)}'
+                        tool_calls_log.append({'tool_name': tool_name, 'status': 'failed', 'error': str(e)})
+
+                messages.append({
+                    'role': 'tool',
+                    'tool_call_id': tool_id,
+                    'content': tool_result,
+                })
+
+        return {
+            'reply': '任务执行超过最大轮数，请简化指令后重试。',
+            'tool_calls': tool_calls_log,
+            'token_usage': token_usage,
+        }
+
+    except Exception as e:
+        logger.error(f'Forum Agent(with data)执行失败: {e}')
+        return {
+            'reply': f'论坛Agent执行异常: {str(e)}',
+            'tool_calls': [],
+            'token_usage': {'input': 0, 'output': 0},
+        }
