@@ -60,10 +60,22 @@ const routes = [
         meta: { title: '面试管理', icon: 'ChatLineRound' }
       },
       {
-        path: 'enrollment/direction',
-        name: 'EnrollmentDirection',
-        component: () => import('@/views/enrollment/DirectionView.vue'),
-        meta: { title: '方向选择', icon: 'Compass' }
+        path: 'enrollment/interview/edit/:enrollmentId',
+        name: 'InterviewEdit',
+        component: () => import('@/views/enrollment/InterviewEditView.vue'),
+        meta: { title: '编辑面试信息', hidden: true }
+      },
+      {
+        path: 'enrollment/assignment',
+        name: 'EnrollmentAssignment',
+        component: () => import('@/views/enrollment/AssignmentView.vue'),
+        meta: { title: '作业分发', icon: 'Promotion' }
+      },
+      {
+        path: 'enrollment/collection',
+        name: 'EnrollmentCollection',
+        component: () => import('@/views/enrollment/CollectionView.vue'),
+        meta: { title: '作业收集', icon: 'FolderChecked' }
       }
     ]
   },

@@ -46,9 +46,13 @@
           <el-icon><ChatLineRound /></el-icon>
           <template #title>面试管理</template>
         </el-menu-item>
-        <el-menu-item index="/enrollment/direction">
-          <el-icon><Compass /></el-icon>
-          <template #title>方向选择</template>
+        <el-menu-item index="/enrollment/assignment">
+          <el-icon><Promotion /></el-icon>
+          <template #title>作业分发</template>
+        </el-menu-item>
+        <el-menu-item index="/enrollment/collection">
+          <el-icon><FolderChecked /></el-icon>
+          <template #title>作业收集</template>
         </el-menu-item>
       </el-sub-menu>
     </el-menu>
