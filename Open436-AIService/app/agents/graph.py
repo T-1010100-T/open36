@@ -92,56 +92,99 @@ async def route_and_plan(state: AgentState) -> AgentState:
     return state
 
 
+def _should_crawl(intent: str, user_message: str) -> bool:
+    """判断是否需要爬取数据
+
+    规则：
+    - chat/query/unclear 不需要
+    - 用户消息超过 500 字符，认为已提供内容，不需要爬取
+    - 其他 forum/problem 意图需要爬取
+    """
+    if intent not in ('forum', 'problem'):
+        return False
+    # 用户已提供大量内容（粘贴文章），跳过爬取
+    if len(user_message) > 500:
+        logger.info(f'用户消息较长({len(user_message)}字符)，跳过爬取')
+        return False
+    return True
+
+
 async def crawl_node(state: AgentState) -> AgentState:
-    """数据收集节点：Router 调用爬虫工具收集数据"""
+    """数据收集节点：Router 调用爬虫工具收集数据
+
+    智能判断：
+    - 用户消息中有 URL → 并行 crawl_webpage 爬取所有页面
+    - 没有 URL → 用 LLM 规划关键词，crawl_search 搜索
+    """
+    import asyncio
     from app.tools.crawler_tools import crawl_search, crawl_webpage
+    import re as _re
 
     user_msg = state['user_message']
-    intent = state['intent']
     crawled = []
     tool_calls_log = []
 
     try:
-        # 用 LLM 判断需要搜索什么关键词
-        plan_prompt = f"""用户请求: {user_msg}
-意图: {intent}
+        # 检查用户消息中是否有 URL
+        url_pattern = r'https?://[^\s<>"\')\]]+'
+        urls = _re.findall(url_pattern, user_msg)
+
+        if urls:
+            # 有 URL → 并行爬取（asyncio.gather 并发执行）
+            urls = urls[:10]  # 最多10个URL
+
+            async def _crawl_one(url: str) -> dict | None:
+                logger.info(f'爬取网页: {url}')
+                result = await crawl_webpage.ainvoke({'url': url})
+                tool_calls_log.append({
+                    'tool_name': 'crawl_webpage',
+                    'status': 'success' if result.get('success') else 'failed',
+                    'url': url,
+                })
+                return result if result.get('success') else None
+
+            # 并行执行所有爬取任务
+            results = await asyncio.gather(*[_crawl_one(url) for url in urls])
+            crawled = [r for r in results if r is not None]
+            logger.info(f'并行爬取完成: {len(crawled)}/{len(urls)} 成功')
+        else:
+            # 没有 URL → 用 LLM 规划搜索关键词
+            plan_prompt = f"""用户请求: {user_msg}
 
 请判断需要搜索哪些关键词来收集数据。返回JSON格式：
 {{"queries": ["关键词1", "关键词2"], "max_results": 5}}
 
 如果用户已经给了明确的搜索词，直接使用。不需要搜索则返回空列表。"""
 
-        data = await _call_llm([
-            {'role': 'system', 'content': '你是数据收集规划师。根据用户请求，规划需要搜索的关键词。只返回JSON。'},
-            {'role': 'user', 'content': plan_prompt},
-        ])
+            data = await _call_llm([
+                {'role': 'system', 'content': '你是数据收集规划师。根据用户请求，规划需要搜索的关键词。只返回JSON。'},
+                {'role': 'user', 'content': plan_prompt},
+            ])
 
-        content = data['choices'][0]['message']['content'].strip()
-        if content.startswith('{'):
-            plan = json.loads(content)
-        else:
-            import re
-            match = re.search(r'\{.*\}', content, re.DOTALL)
-            plan = json.loads(match.group()) if match else {'queries': []}
+            content = data['choices'][0]['message']['content'].strip()
+            if content.startswith('{'):
+                plan = json.loads(content)
+            else:
+                match = _re.search(r'\{.*\}', content, _re.DOTALL)
+                plan = json.loads(match.group()) if match else {'queries': []}
 
-        queries = plan.get('queries', [])
-        max_results = plan.get('max_results', 5)
+            queries = plan.get('queries', [])
+            max_results = plan.get('max_results', 5)
 
-        # 对每个关键词调用爬虫搜索
-        for query in queries[:3]:  # 最多3个关键词
-            logger.info(f'爬取搜索: {query}')
-            result = await crawl_search.ainvoke({
-                'keyword': query,
-                'max_results': max_results,
-            })
-            tool_calls_log.append({
-                'tool_name': 'crawl_search',
-                'status': 'success' if result.get('success') else 'failed',
-                'query': query,
-                'pages_count': len(result.get('pages', [])),
-            })
-            if result.get('success'):
-                crawled.extend(result.get('pages', []))
+            for query in queries[:3]:
+                logger.info(f'爬取搜索: {query}')
+                result = await crawl_search.ainvoke({
+                    'keyword': query,
+                    'max_results': max_results,
+                })
+                tool_calls_log.append({
+                    'tool_name': 'crawl_search',
+                    'status': 'success' if result.get('success') else 'failed',
+                    'query': query,
+                    'pages_count': len(result.get('pages', [])),
+                })
+                if result.get('success'):
+                    crawled.extend(result.get('pages', []))
 
         state['crawled_data'] = crawled
         state['tool_calls'] = tool_calls_log
@@ -260,39 +303,118 @@ async def unclear_node(state: AgentState) -> AgentState:
     return state
 
 
+async def decompose_task(user_message: str) -> list[dict] | None:
+    """任务拆解：判断是否需要将一个请求拆分为多个子任务
+
+    场景：用户给一个训练页/题单 URL，要求爬取多道题并分别发帖
+    返回：子任务列表 [{"url": "...", "action": "forum|problem", "description": "..."}]
+    返回 None 表示不需要拆解
+    """
+    import re as _re
+
+    # 提取 URL
+    url_pattern = r'https?://[^\s<>"\')\]]+'
+    urls = _re.findall(url_pattern, user_message)
+
+    if not urls:
+        return None
+
+    # 用 LLM 判断是否需要拆解
+    decompose_prompt = f"""用户请求: {user_message}
+
+URL: {urls[0]}
+
+判断这个请求是否需要拆分为多个子任务。例如：
+- "爬取训练页前5题，每题发一个帖子" → 需要拆解为5个子任务
+- "爬取这个页面并发帖" → 不需要拆解，单个任务
+
+如果需要拆解，请返回 JSON 格式：
+{{
+  "need_decompose": true,
+  "tasks": [
+    {{"url": "https://...", "action": "forum", "description": "爬取题目并生成帖子"}},
+    ...
+  ]
+}}
+
+如果不需要拆解：
+{{"need_decompose": false}}
+
+注意：
+- 对于洛谷训练页(luogu.com.cn/training/XXX)，如果用户要求爬取多道题，需要拆解
+- 洛谷题目URL格式: https://www.luogu.com.cn/problem/PXXXX
+- 只返回 JSON，不要其他内容"""
+
+    try:
+        data = await _call_llm([
+            {'role': 'system', 'content': '你是任务拆解专家。分析用户请求，判断是否需要拆分为多个子任务。只返回JSON。'},
+            {'role': 'user', 'content': decompose_prompt},
+        ])
+
+        content = data['choices'][0]['message']['content'].strip()
+        # 去掉可能的 markdown 代码块标记
+        if '```' in content:
+            content = _re.sub(r'```json?\s*', '', content)
+            content = content.replace('```', '').strip()
+
+        if content.startswith('{'):
+            result = json.loads(content)
+        else:
+            match = _re.search(r'\{.*\}', content, _re.DOTALL)
+            result = json.loads(match.group()) if match else {}
+
+        if result.get('need_decompose') and result.get('tasks'):
+            logger.info(f'任务拆解: {len(result["tasks"])} 个子任务')
+            return result['tasks']
+
+    except Exception as e:
+        logger.error(f'任务拆解失败: {e}')
+
+    return None
+
+
 async def run_agent(user_message: str, user_id: int) -> dict:
     """
     执行Agent工作流 - Router 总指挥架构
 
     流程：
     1. Router 意图识别
-    2. 如果需要数据 → 调用爬虫收集
-    3. 分发给下游 Agent 处理
-    4. 汇总结果返回
+    2. 判断是否需要任务拆解（多个子任务）
+    3. 如果需要拆解 → 并行处理多个子任务
+    4. 如果不需要拆解 → 单任务流程
     """
+    import asyncio
+
+    # Step 1: Router 意图识别
+    intent_result = await classify_intent(user_message)
+    intent = intent_result['intent']
+    logger.info(f'意图分类: {intent_result}')
+
+    # Step 2: 判断是否需要任务拆解
+    sub_tasks = await decompose_task(user_message)
+
+    if sub_tasks and len(sub_tasks) > 1:
+        # 多子任务模式：并行爬取，逐个处理
+        logger.info(f'多子任务模式: {len(sub_tasks)} 个任务')
+        return await _run_multi_tasks(sub_tasks, user_id, intent)
+
+    # 单任务模式
     state: AgentState = {
         'user_message': user_message,
         'user_id': user_id,
-        'intent': '',
-        'agent_name': '',
+        'intent': intent,
+        'agent_name': 'router',
         'reply': '',
         'crawled_data': [],
         'tool_calls': [],
         'token_usage': {'input': 0, 'output': 0},
     }
 
-    # Step 1: Router 意图识别
-    state = await route_and_plan(state)
-    intent = state['intent']
-
-    # Step 2: 根据意图决定是否需要爬取数据
-    need_crawl = intent in ('forum', 'problem')
+    need_crawl = _should_crawl(intent, user_message)
 
     if need_crawl:
-        # Step 3: 调用爬虫收集数据
         state = await crawl_node(state)
 
-    # Step 4: 分发给下游 Agent 处理
     if intent == 'forum':
         state = await forum_node(state)
     elif intent == 'problem':
@@ -310,4 +432,68 @@ async def run_agent(user_message: str, user_id: int) -> dict:
         'agent_name': state['agent_name'],
         'tool_calls': state['tool_calls'],
         'token_usage': state['token_usage'],
+    }
+
+
+async def _run_multi_tasks(sub_tasks: list[dict], user_id: int, intent: str) -> dict:
+    """处理多个子任务：并行爬取 + 逐个处理"""
+    import asyncio
+    from app.tools.crawler_tools import crawl_webpage
+
+    # Step 1: 并行爬取所有子任务的 URL
+    async def _crawl_task(task: dict) -> dict | None:
+        url = task.get('url', '')
+        if not url:
+            return None
+        logger.info(f'子任务爬取: {url}')
+        result = await crawl_webpage.ainvoke({'url': url})
+        return result if result.get('success') else None
+
+    crawl_results = await asyncio.gather(*[_crawl_task(t) for t in sub_tasks])
+    crawled_data = [r for r in crawl_results if r is not None]
+    logger.info(f'子任务爬取完成: {len(crawled_data)}/{len(sub_tasks)} 成功')
+
+    # Step 2: 逐个处理每个子任务
+    replies = []
+    all_tool_calls = []
+    total_tokens = {'input': 0, 'output': 0}
+
+    for i, (task, crawled) in enumerate(zip(sub_tasks, crawl_results)):
+        if not crawled:
+            replies.append(f'❌ 子任务 {i+1}: 爬取失败 - {task.get("url", "")}')
+            continue
+
+        task_state: AgentState = {
+            'user_message': task.get('description', task.get('url', '')),
+            'user_id': user_id,
+            'intent': intent,
+            'agent_name': 'router',
+            'reply': '',
+            'crawled_data': [crawled],
+            'tool_calls': [],
+            'token_usage': {'input': 0, 'output': 0},
+        }
+
+        if intent == 'forum' or task.get('action') == 'forum':
+            task_state = await forum_node(task_state)
+        elif intent == 'problem' or task.get('action') == 'problem':
+            task_state = await problem_node(task_state)
+        else:
+            task_state = await forum_node(task_state)
+
+        replies.append(f'**子任务 {i+1}**: {task.get("description", task.get("url", ""))}\n{task_state["reply"]}')
+        all_tool_calls.extend(task_state.get('tool_calls', []))
+        total_tokens['input'] += task_state['token_usage'].get('input', 0)
+        total_tokens['output'] += task_state['token_usage'].get('output', 0)
+
+    # 汇总结果
+    summary = f'✅ 共处理 {len(sub_tasks)} 个子任务，成功 {len(crawled_data)} 个\n\n'
+    summary += '\n\n---\n\n'.join(replies)
+
+    return {
+        'reply': summary,
+        'intent': intent,
+        'agent_name': 'router',
+        'tool_calls': all_tool_calls,
+        'token_usage': total_tokens,
     }
