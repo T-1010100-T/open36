@@ -3,28 +3,46 @@
     <div class="page-header">
       <h2>用户管理</h2>
     </div>
+
+    <!-- 工具栏 -->
     <div class="toolbar">
-      <el-input v-model="keyword" placeholder="搜索用户名/昵称" clearable style="width:240px" prefix-icon="Search" @input="handleSearch" />
+      <el-input v-model="keyword" placeholder="搜索用户名/昵称/学号" clearable style="width:240px" prefix-icon="Search" @input="handleSearch" />
       <el-select v-model="roleFilter" placeholder="角色筛选" clearable style="width:140px" @change="handleSearch">
         <el-option label="管理员" value="admin" />
-        <el-option label="普通用户" value="user" />
+        <el-option label="用户" value="user" />
+        <el-option label="浏览" value="viewer" />
       </el-select>
       <el-select v-model="statusFilter" placeholder="状态筛选" clearable style="width:140px" @change="handleSearch">
         <el-option label="待审核" value="pending" />
-        <el-option label="启用" value="active" />
-        <el-option label="禁用" value="disabled" />
+        <el-option label="已通过" value="active" />
+        <el-option label="未通过" value="rejected" />
       </el-select>
-      <el-button type="primary" @click="showCreateDialog = true"><el-icon><Plus /></el-icon>创建用户</el-button>
-      <el-button type="danger" :disabled="!selectedIds.length" @click="handleBatchDelete"><el-icon><Delete /></el-icon>批量删除</el-button>
+      <div style="flex:1"></div>
+      <el-button type="success" :disabled="!selectedIds.length" @click="handleBatchApprove">
+        <el-icon><Check /></el-icon>审核通过
+      </el-button>
+      <el-button type="primary" :disabled="selectedIds.length !== 1" @click="handleOpenRoleDialog">
+        <el-icon><UserFilled /></el-icon>权限分配
+      </el-button>
+      <el-button type="warning" :disabled="!selectedIds.length" @click="handleBatchResetPwd">
+        <el-icon><Key /></el-icon>重置密码
+      </el-button>
+      <el-button type="danger" :disabled="!selectedIds.length" @click="handleBatchDisable">
+        <el-icon><Close /></el-icon>禁用
+      </el-button>
+      <el-button type="danger" plain :disabled="!selectedIds.length" @click="handleBatchDelete">
+        <el-icon><Delete /></el-icon>删除
+      </el-button>
     </div>
 
+    <!-- 表格 -->
     <el-table :data="filteredUsers" stripe v-loading="loading" @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="55" />
-      <el-table-column prop="id" label="ID" width="70" />
-      <el-table-column label="用户" min-width="200">
+      <el-table-column prop="id" label="ID" width="60" />
+      <el-table-column label="用户" min-width="180">
         <template #default="{ row }">
           <div style="display:flex;align-items:center;gap:10px">
-            <el-avatar :size="32" :src="row.avatar">{{ row.username[0] }}</el-avatar>
+            <el-avatar :size="32" :src="row.avatar">{{ (row.username || '?')[0] }}</el-avatar>
             <div>
               <div style="font-weight:500">{{ row.nickname || row.username }}</div>
               <div style="font-size:12px;color:#909399">@{{ row.username }}</div>
@@ -36,28 +54,19 @@
       <el-table-column prop="studentId" label="学号" width="120" />
       <el-table-column prop="major" label="专业" width="120" />
       <el-table-column prop="phone" label="电话" width="120" />
-      <el-table-column prop="role" label="角色" width="100">
+      <el-table-column label="角色" width="100">
         <template #default="{ row }">
-          <el-tag :type="row.role === 'admin' ? 'danger' : ''" size="small">
-            {{ row.role === 'admin' ? '管理员' : '用户' }}
-          </el-tag>
+          <el-tag :type="roleTagType[row.role]" size="small">{{ roleLabels[row.role] }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="status" label="状态" width="120">
+      <el-table-column label="状态" width="100">
         <template #default="{ row }">
-          <el-tag v-if="row.status === 'pending'" type="warning" size="small">待审核</el-tag>
-          <el-tag v-else-if="row.status === 'active'" type="success" size="small">启用</el-tag>
-          <el-tag v-else type="info" size="small">禁用</el-tag>
+          <el-tag :type="statusTagType[row.status]" size="small">{{ statusLabels[row.status] }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="createdAt" label="注册时间" width="180" />
-      <el-table-column label="操作" width="280" fixed="right">
+      <el-table-column label="注册时间" width="160">
         <template #default="{ row }">
-          <el-button v-if="row.status === 'pending'" type="success" link size="small" @click="handleApprove(row)">审核通过</el-button>
-          <el-button v-if="row.status === 'active'" type="danger" link size="small" @click="handleDisable(row)">禁用</el-button>
-          <el-button v-if="row.status === 'disabled'" type="primary" link size="small" @click="handleEnable(row)">启用</el-button>
-          <el-button type="primary" link size="small" @click="handleResetPwd(row)">重置密码</el-button>
-          <el-button type="danger" link size="small" @click="handleDelete(row)">删除</el-button>
+          {{ formatDate(row.createdAt || row.gmtCreate) }}
         </template>
       </el-table-column>
     </el-table>
@@ -72,49 +81,38 @@
       />
     </div>
 
-    <!-- 创建用户对话框 -->
-    <el-dialog v-model="showCreateDialog" title="创建用户" width="460px" destroy-on-close>
-      <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="80px">
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="createForm.username" placeholder="3-20个字符" />
+    <!-- 权限分配对话框 -->
+    <el-dialog v-model="showRoleDialog" title="权限分配" width="400px" destroy-on-close>
+      <div v-if="roleTarget" style="margin-bottom:16px">
+        <span>用户：</span>
+        <el-tag size="small">{{ roleTarget.nickname || roleTarget.username }}</el-tag>
+        <span style="color:#909399;margin-left:8px">@{{ roleTarget.username }}</span>
+      </div>
+      <el-form label-width="60px">
+        <el-form-item label="角色">
+          <el-radio-group v-model="selectedRole" style="width:100%">
+            <el-radio-button value="viewer">浏览</el-radio-button>
+            <el-radio-button value="user">用户</el-radio-button>
+            <el-radio-button value="admin">管理员</el-radio-button>
+          </el-radio-group>
         </el-form-item>
-        <el-form-item label="密码" prop="password">
-          <el-input v-model="createForm.password" type="password" placeholder="6-32个字符" show-password />
-        </el-form-item>
-        <el-form-item label="角色" prop="role">
-          <el-select v-model="createForm.role" style="width:100%">
-            <el-option label="管理员" value="admin" />
-            <el-option label="普通用户" value="user" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态" prop="status">
-          <el-select v-model="createForm.status" style="width:100%">
-            <el-option label="待审核" value="pending" />
-            <el-option label="启用" value="active" />
-            <el-option label="禁用" value="disabled" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="学号" prop="studentId">
-          <el-input v-model="createForm.studentId" placeholder="学号" />
-        </el-form-item>
-        <el-form-item label="真实姓名" prop="realName">
-          <el-input v-model="createForm.realName" placeholder="真实姓名" />
-        </el-form-item>
-        <el-form-item label="电话" prop="phone">
-          <el-input v-model="createForm.phone" placeholder="电话号码" />
-        </el-form-item>
-        <el-form-item label="专业" prop="major">
-          <el-input v-model="createForm.major" placeholder="专业名称" />
-        </el-form-item>
+        <div style="background:#f5f7fa;padding:12px;border-radius:8px;margin-top:12px">
+          <div style="font-size:13px;color:#606266;margin-bottom:8px">权限说明：</div>
+          <div style="font-size:12px;color:#909399">
+            <div><b>浏览</b>：仅可浏览论坛内容</div>
+            <div><b>用户</b>：论坛发帖 + 算法做题</div>
+            <div><b>管理员</b>：全部权限</div>
+          </div>
+        </div>
       </el-form>
       <template #footer>
-        <el-button @click="showCreateDialog = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleCreate">确定</el-button>
+        <el-button @click="showRoleDialog = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="handleRoleSubmit">确定</el-button>
       </template>
     </el-dialog>
 
     <!-- 重置密码对话框 -->
-    <el-dialog v-model="showResetDialog" title="重置密码" width="460px" destroy-on-close>
+    <el-dialog v-model="showResetDialog" title="重置密码" width="400px" destroy-on-close>
       <el-form ref="resetFormRef" :model="resetForm" :rules="resetRules" label-width="80px">
         <el-form-item label="新密码" prop="newPassword">
           <el-input v-model="resetForm.newPassword" type="password" placeholder="6-32个字符" show-password />
@@ -131,7 +129,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getUserList, createUser, updateUserStatus, resetPassword, deleteUser, batchDeleteUsers } from '@/api/users'
+import { getUserList, updateUserStatus, updateUserRole, resetPassword, deleteUser, batchDeleteUsers, batchUpdateUserStatus } from '@/api/users'
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -144,33 +142,47 @@ const pageSize = 10
 const total = ref(0)
 const selectedIds = ref([])
 
-const showCreateDialog = ref(false)
+// 角色相关
+const showRoleDialog = ref(false)
+const roleTarget = ref(null)
+const selectedRole = ref('user')
+
+// 重置密码相关
 const showResetDialog = ref(false)
-const createFormRef = ref(null)
 const resetFormRef = ref(null)
-const resetTarget = ref(null)
-
-function handleSelectionChange(rows) {
-  selectedIds.value = rows.map(r => r.id)
-}
-
-const createForm = reactive({ username: '', password: '', role: 'user', status: 'pending', studentId: '', realName: '', phone: '', major: '' })
-const createRules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }, { min: 3, max: 20, message: '3-20个字符', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }, { min: 6, max: 32, message: '6-32个字符', trigger: 'blur' }],
-  role: [{ required: true, message: '请选择角色', trigger: 'change' }]
-}
-
+const resetTargetIds = ref([])
 const resetForm = reactive({ newPassword: '' })
 const resetRules = {
   newPassword: [{ required: true, message: '请输入新密码', trigger: 'blur' }, { min: 6, max: 32, message: '6-32个字符', trigger: 'blur' }]
+}
+
+const roleLabels = { admin: '管理员', user: '用户', viewer: '浏览' }
+const roleTagType = { admin: 'danger', user: '', viewer: 'info' }
+const statusLabels = { pending: '待审核', active: '已通过', rejected: '未通过' }
+const statusTagType = { pending: 'warning', active: 'success', rejected: 'info' }
+
+function formatDate(dateStr) {
+  if (!dateStr) return '-'
+  try {
+    return new Date(dateStr).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  } catch {
+    return dateStr
+  }
+}
+
+function handleSelectionChange(rows) {
+  selectedIds.value = rows.map(r => r.id)
 }
 
 const filteredUsers = computed(() => {
   let list = users.value
   if (keyword.value) {
     const kw = keyword.value.toLowerCase()
-    list = list.filter(u => u.username.toLowerCase().includes(kw) || (u.nickname || '').toLowerCase().includes(kw))
+    list = list.filter(u =>
+      (u.username || '').toLowerCase().includes(kw) ||
+      (u.nickname || '').toLowerCase().includes(kw) ||
+      (u.studentId || '').includes(kw)
+    )
   }
   if (roleFilter.value) list = list.filter(u => u.role === roleFilter.value)
   if (statusFilter.value) list = list.filter(u => u.status === statusFilter.value)
@@ -195,92 +207,57 @@ async function loadUsers() {
   }
 }
 
-async function handleApprove(row) {
+// ──────────── 批量操作 ────────────
+
+async function handleBatchApprove() {
   try {
-    await ElMessageBox.confirm(`确定通过用户 ${row.username} 的注册申请？`, '审核确认', { type: 'warning' })
-    await updateUserStatus(row.id, { status: 'active' })
-    row.status = 'active'
+    await ElMessageBox.confirm(`确定通过选中的 ${selectedIds.value.length} 位用户？`, '审核确认', { type: 'warning' })
+    await batchUpdateUserStatus(selectedIds.value, { status: 'active' })
     ElMessage.success('审核通过')
-  } catch (e) {
-    if (e !== 'cancel') {
-      ElMessage.error(e?.message || '审核失败')
-    }
-  }
-}
-
-async function handleEnable(row) {
-  try {
-    await ElMessageBox.confirm(`确定启用用户 ${row.username}？`, '提示', { type: 'warning' })
-    await updateUserStatus(row.id, { status: 'active' })
-    row.status = 'active'
-    ElMessage.success('启用成功')
-  } catch (e) {
-    if (e !== 'cancel') {
-      ElMessage.error(e?.message || '启用失败')
-    }
-  }
-}
-
-async function handleDisable(row) {
-  try {
-    await ElMessageBox.confirm(`确定禁用用户 ${row.username}？`, '提示', { type: 'warning' })
-    await updateUserStatus(row.id, { status: 'disabled' })
-    row.status = 'disabled'
-    ElMessage.success('禁用成功')
-  } catch (e) {
-    if (e !== 'cancel') {
-      ElMessage.error(e?.message || '禁用失败')
-    }
-  }
-}
-
-async function handleDelete(row) {
-  try {
-    await ElMessageBox.confirm(`确定删除用户 ${row.username}？此操作不可恢复！`, '删除确认', { type: 'warning' })
-    await deleteUser(row.id)
-    ElMessage.success('删除成功')
-    loadUsers()
-  } catch (e) {
-    if (e !== 'cancel') {
-      ElMessage.error(e?.message || '删除失败')
-    }
-  }
-}
-
-async function handleBatchDelete() {
-  if (!selectedIds.value.length) return
-  try {
-    await ElMessageBox.confirm(`确定删除选中的 ${selectedIds.value.length} 位用户？此操作不可恢复！`, '批量删除确认', { type: 'warning' })
-    await batchDeleteUsers(selectedIds.value)
-    ElMessage.success('批量删除成功')
     selectedIds.value = []
     loadUsers()
   } catch (e) {
-    if (e !== 'cancel') {
-      ElMessage.error(e?.message || '批量删除失败')
-    }
+    if (e !== 'cancel') ElMessage.error(e?.message || '操作失败')
   }
 }
 
-async function handleCreate() {
-  const valid = await createFormRef.value.validate().catch(() => false)
-  if (!valid) return
-  submitting.value = true
+async function handleBatchDisable() {
   try {
-    await createUser(createForm)
-    ElMessage.success('创建成功')
-    showCreateDialog.value = false
-    Object.assign(createForm, { username: '', password: '', role: 'user', status: 'pending', studentId: '', realName: '', phone: '', major: '' })
+    await ElMessageBox.confirm(`确定禁用选中的 ${selectedIds.value.length} 位用户？`, '禁用确认', { type: 'warning' })
+    await batchUpdateUserStatus(selectedIds.value, { status: 'rejected' })
+    ElMessage.success('已禁用')
+    selectedIds.value = []
     loadUsers()
   } catch (e) {
-    ElMessage.error(e?.message || '创建失败')
+    if (e !== 'cancel') ElMessage.error(e?.message || '操作失败')
+  }
+}
+
+function handleOpenRoleDialog() {
+  if (selectedIds.value.length !== 1) return
+  const user = users.value.find(u => u.id === selectedIds.value[0])
+  if (!user) return
+  roleTarget.value = user
+  selectedRole.value = user.role || 'user'
+  showRoleDialog.value = true
+}
+
+async function handleRoleSubmit() {
+  submitting.value = true
+  try {
+    await updateUserRole(roleTarget.value.id, { role: selectedRole.value })
+    roleTarget.value.role = selectedRole.value
+    ElMessage.success('权限分配成功')
+    showRoleDialog.value = false
+  } catch (e) {
+    ElMessage.error(e?.message || '操作失败')
   } finally {
     submitting.value = false
   }
 }
 
-function handleResetPwd(row) {
-  resetTarget.value = row
+function handleBatchResetPwd() {
+  resetTargetIds.value = [...selectedIds.value]
   resetForm.newPassword = ''
   showResetDialog.value = true
 }
@@ -290,8 +267,10 @@ async function handleResetSubmit() {
   if (!valid) return
   submitting.value = true
   try {
-    await resetPassword(resetTarget.value.id, { newPassword: resetForm.newPassword })
-    ElMessage.success('密码已重置')
+    for (const id of resetTargetIds.value) {
+      await resetPassword(id, { newPassword: resetForm.newPassword })
+    }
+    ElMessage.success(`已重置 ${resetTargetIds.value.length} 位用户的密码`)
     showResetDialog.value = false
   } catch (e) {
     ElMessage.error(e?.message || '重置失败')
@@ -300,5 +279,38 @@ async function handleResetSubmit() {
   }
 }
 
+async function handleBatchDelete() {
+  try {
+    await ElMessageBox.confirm(`确定删除选中的 ${selectedIds.value.length} 位用户？此操作不可恢复！`, '删除确认', { type: 'warning' })
+    await batchDeleteUsers(selectedIds.value)
+    ElMessage.success('删除成功')
+    selectedIds.value = []
+    loadUsers()
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e?.message || '删除失败')
+  }
+}
+
 onMounted(loadUsers)
 </script>
+
+<style scoped>
+.user-view {
+  padding: 0;
+}
+.page-header {
+  margin-bottom: 20px;
+}
+.page-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+.toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+</style>

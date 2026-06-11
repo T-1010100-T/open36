@@ -12,6 +12,10 @@ export function updateUserStatus(id, data) {
   return request.put(`/api/auth/users/${id}/status`, data)
 }
 
+export function updateUserRole(id, data) {
+  return request.put(`/api/auth/users/${id}/role`, data)
+}
+
 export function resetPassword(id, data) {
   return request.put(`/api/auth/users/${id}/password`, data)
 }
@@ -22,6 +26,10 @@ export function deleteUser(id) {
 
 export function batchDeleteUsers(ids) {
   return request.delete('/api/auth/users/batch', { data: ids })
+}
+
+export function batchUpdateUserStatus(ids, data) {
+  return request.put('/api/auth/users/batch/status', { ids, ...data })
 }
 
 export function updateUserPermission(id, data) {

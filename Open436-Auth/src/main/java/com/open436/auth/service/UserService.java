@@ -86,6 +86,21 @@ public interface UserService {
      * @return 用户信息
      */
     UserInfoResponse updateUserPermission(Long userId, String clientPermission);
+
+    /**
+     * 更新用户角色（管理员功能）
+     * @param userId 用户ID
+     * @param role 角色（admin/user/viewer）
+     * @return 用户信息
+     */
+    UserInfoResponse updateUserRole(Long userId, String role);
+
+    /**
+     * 批量更新用户状态（管理员功能）
+     * @param userIds 用户ID列表
+     * @param status 新状态
+     */
+    void batchUpdateStatus(List<Long> userIds, String status);
 }
 
 

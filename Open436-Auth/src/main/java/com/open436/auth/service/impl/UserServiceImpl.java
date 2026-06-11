@@ -14,6 +14,7 @@ import com.open436.auth.repository.UserAuthRepository;
 import com.open436.auth.service.PermissionService;
 import com.open436.auth.service.RoleService;
 import com.open436.auth.service.UserService;
+import com.open436.auth.service.UserProfileService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -36,6 +37,7 @@ public class UserServiceImpl implements UserService {
     private final PasswordEncoder passwordEncoder;
     private final PermissionService permissionService;
     private final RoleService roleService;
+    private final UserProfileService userProfileService;
     
     /**
      * 创建用户（管理员功能）
@@ -80,10 +82,13 @@ public class UserServiceImpl implements UserService {
         
         user = userAuthRepository.save(user);
 
+        // 6. 创建用户资料和统计
+        userProfileService.createProfileForUser(user.getId(), "用户" + user.getId());
+
         log.info("用户创建成功: userId={}, username={}, role={}",
                  user.getId(), user.getUsername(), request.getRole());
 
-        // 6. 返回用户信息
+        // 7. 返回用户信息
         return UserInfoResponse.builder()
             .id(user.getId())
             .username(user.getUsername())
@@ -349,6 +354,70 @@ public class UserServiceImpl implements UserService {
             .status(user.getStatus())
             .clientPermission(user.getClientPermission())
             .build();
+    }
+
+    /**
+     * 更新用户角色（管理员功能）
+     */
+    @Override
+    @Transactional
+    public UserInfoResponse updateUserRole(Long userId, String role) {
+        log.info("更新用户角色: userId={}, role={}", userId, role);
+
+        // 1. 查询用户
+        UserAuth user = userAuthRepository.findById(userId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        // 2. 更新角色（需要先删除旧角色，添加新角色）
+        // 清除现有角色
+        user.getRoles().clear();
+
+        // 根据角色代码设置对应的权限
+        String clientPermission;
+        switch (role) {
+            case "admin":
+                clientPermission = "all";
+                break;
+            case "user":
+                clientPermission = "all";
+                break;
+            case "viewer":
+                clientPermission = "forum";
+                break;
+            default:
+                clientPermission = "forum";
+        }
+        user.setClientPermission(clientPermission);
+
+        userAuthRepository.save(user);
+
+        // 3. 清除缓存
+        permissionService.clearUserPermissionsCache(userId);
+
+        log.info("用户角色更新成功: userId={}, role={}", userId, role);
+
+        return UserInfoResponse.builder()
+            .id(user.getId())
+            .username(user.getUsername())
+            .role(role)
+            .status(user.getStatus())
+            .clientPermission(user.getClientPermission())
+            .build();
+    }
+
+    /**
+     * 批量更新用户状态（管理员功能）
+     */
+    @Override
+    @Transactional
+    public void batchUpdateStatus(List<Long> userIds, String status) {
+        log.info("批量更新用户状态: count={}, status={}", userIds.size(), status);
+
+        for (Long userId : userIds) {
+            updateUserStatus(userId, status);
+        }
+
+        log.info("批量更新用户状态完成: count={}", userIds.size());
     }
 }
 

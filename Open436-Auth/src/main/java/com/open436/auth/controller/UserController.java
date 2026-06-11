@@ -204,6 +204,59 @@ public class UserController {
                 .build()
         );
     }
+
+    /**
+     * 更新用户角色（管理员功能）
+     */
+    @PutMapping("/{id}/role")
+    @SaCheckRole("admin")
+    public ResponseEntity<ApiResponse<UserInfoResponse>> updateUserRole(
+            @PathVariable Long id,
+            @RequestBody UpdateUserRoleRequest request) {
+
+        log.info("更新用户角色请求: userId={}, role={}", id, request.getRole());
+
+        UserInfoResponse response = userService.updateUserRole(id, request.getRole());
+
+        return ResponseEntity.ok(
+            ApiResponse.<UserInfoResponse>builder()
+                .code(200)
+                .message("用户角色已更新")
+                .data(response)
+                .timestamp(System.currentTimeMillis())
+                .build()
+        );
+    }
+
+    /**
+     * 批量更新用户状态（管理员功能）
+     */
+    @PutMapping("/batch/status")
+    @SaCheckRole("admin")
+    public ResponseEntity<ApiResponse<Void>> batchUpdateStatus(
+            @RequestBody BatchUpdateStatusRequest request) {
+
+        if (request.getIds() == null || request.getIds().isEmpty()) {
+            return ResponseEntity.badRequest()
+                .body(ApiResponse.<Void>builder()
+                    .code(400)
+                    .message("用户ID列表不能为空")
+                    .timestamp(System.currentTimeMillis())
+                    .build());
+        }
+
+        log.info("批量更新用户状态请求: count={}, status={}", request.getIds().size(), request.getStatus());
+
+        userService.batchUpdateStatus(request.getIds(), request.getStatus());
+
+        return ResponseEntity.ok(
+            ApiResponse.<Void>builder()
+                .code(200)
+                .message("批量更新成功")
+                .timestamp(System.currentTimeMillis())
+                .build()
+        );
+    }
 }
 
 
