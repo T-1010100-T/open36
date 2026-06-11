@@ -14,12 +14,6 @@
         <el-option label="启用" value="active" />
         <el-option label="禁用" value="disabled" />
       </el-select>
-      <el-select v-model="permissionFilter" placeholder="权限筛选" clearable style="width:160px" @change="handleSearch">
-        <el-option label="全部权限" value="all" />
-        <el-option label="仅论坛" value="forum" />
-        <el-option label="仅算法" value="algo" />
-        <el-option label="无权限" value="none" />
-      </el-select>
       <el-button type="primary" @click="showCreateDialog = true"><el-icon><Plus /></el-icon>创建用户</el-button>
       <el-button type="danger" :disabled="!selectedIds.length" @click="handleBatchDelete"><el-icon><Delete /></el-icon>批量删除</el-button>
     </div>
@@ -56,21 +50,12 @@
           <el-tag v-else type="info" size="small">禁用</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="clientPermission" label="客户端权限" width="120">
-        <template #default="{ row }">
-          <el-tag v-if="row.clientPermission === 'forum'" type="primary" size="small">仅论坛</el-tag>
-          <el-tag v-else-if="row.clientPermission === 'algo'" type="success" size="small">仅算法</el-tag>
-          <el-tag v-else-if="row.clientPermission === 'none'" type="info" size="small">无权限</el-tag>
-          <el-tag v-else type="warning" size="small">全部权限</el-tag>
-        </template>
-      </el-table-column>
       <el-table-column prop="createdAt" label="注册时间" width="180" />
-      <el-table-column label="操作" width="300" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
           <el-button v-if="row.status === 'pending'" type="success" link size="small" @click="handleApprove(row)">审核通过</el-button>
           <el-button v-if="row.status === 'active'" type="danger" link size="small" @click="handleDisable(row)">禁用</el-button>
           <el-button v-if="row.status === 'disabled'" type="primary" link size="small" @click="handleEnable(row)">启用</el-button>
-          <el-button type="primary" link size="small" @click="handleEditPermission(row)">权限</el-button>
           <el-button type="primary" link size="small" @click="handleResetPwd(row)">重置密码</el-button>
           <el-button type="danger" link size="small" @click="handleDelete(row)">删除</el-button>
         </template>
@@ -121,14 +106,6 @@
         <el-form-item label="专业" prop="major">
           <el-input v-model="createForm.major" placeholder="专业名称" />
         </el-form-item>
-        <el-form-item label="客户端权限" prop="clientPermission">
-          <el-select v-model="createForm.clientPermission" style="width:100%">
-            <el-option label="全部权限（论坛+算法）" value="all" />
-            <el-option label="仅论坛" value="forum" />
-            <el-option label="仅算法" value="algo" />
-            <el-option label="无权限" value="none" />
-          </el-select>
-        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showCreateDialog = false">取消</el-button>
@@ -148,34 +125,13 @@
         <el-button type="primary" :loading="submitting" @click="handleResetSubmit">确定</el-button>
       </template>
     </el-dialog>
-
-    <!-- 编辑权限对话框 -->
-    <el-dialog v-model="showPermissionDialog" title="编辑客户端权限" width="460px" destroy-on-close>
-      <el-form label-width="100px">
-        <el-form-item label="当前用户">
-          <span>{{ permissionTarget?.nickname || permissionTarget?.username }}</span>
-        </el-form-item>
-        <el-form-item label="客户端权限">
-          <el-select v-model="permissionForm.clientPermission" style="width:100%">
-            <el-option label="全部权限（论坛+算法）" value="all" />
-            <el-option label="仅论坛" value="forum" />
-            <el-option label="仅算法" value="algo" />
-            <el-option label="无权限" value="none" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showPermissionDialog = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handlePermissionSubmit">确定</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getUserList, createUser, updateUserStatus, resetPassword, deleteUser, updateUserPermission, batchDeleteUsers } from '@/api/users'
+import { getUserList, createUser, updateUserStatus, resetPassword, deleteUser, batchDeleteUsers } from '@/api/users'
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -183,7 +139,6 @@ const users = ref([])
 const keyword = ref('')
 const roleFilter = ref('')
 const statusFilter = ref('')
-const permissionFilter = ref('')
 const page = ref(1)
 const pageSize = 10
 const total = ref(0)
@@ -191,18 +146,15 @@ const selectedIds = ref([])
 
 const showCreateDialog = ref(false)
 const showResetDialog = ref(false)
-const showPermissionDialog = ref(false)
 const createFormRef = ref(null)
 const resetFormRef = ref(null)
 const resetTarget = ref(null)
-const permissionTarget = ref(null)
-const permissionForm = reactive({ clientPermission: 'all' })
 
 function handleSelectionChange(rows) {
   selectedIds.value = rows.map(r => r.id)
 }
 
-const createForm = reactive({ username: '', password: '', role: 'user', status: 'pending', studentId: '', realName: '', phone: '', major: '', clientPermission: 'all' })
+const createForm = reactive({ username: '', password: '', role: 'user', status: 'pending', studentId: '', realName: '', phone: '', major: '' })
 const createRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }, { min: 3, max: 20, message: '3-20个字符', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }, { min: 6, max: 32, message: '6-32个字符', trigger: 'blur' }],
@@ -222,7 +174,6 @@ const filteredUsers = computed(() => {
   }
   if (roleFilter.value) list = list.filter(u => u.role === roleFilter.value)
   if (statusFilter.value) list = list.filter(u => u.status === statusFilter.value)
-  if (permissionFilter.value) list = list.filter(u => u.clientPermission === permissionFilter.value)
   return list
 })
 
@@ -319,7 +270,7 @@ async function handleCreate() {
     await createUser(createForm)
     ElMessage.success('创建成功')
     showCreateDialog.value = false
-    Object.assign(createForm, { username: '', password: '', role: 'user', status: 'pending', studentId: '', realName: '', phone: '', major: '', clientPermission: 'all' })
+    Object.assign(createForm, { username: '', password: '', role: 'user', status: 'pending', studentId: '', realName: '', phone: '', major: '' })
     loadUsers()
   } catch (e) {
     ElMessage.error(e?.message || '创建失败')
@@ -332,26 +283,6 @@ function handleResetPwd(row) {
   resetTarget.value = row
   resetForm.newPassword = ''
   showResetDialog.value = true
-}
-
-function handleEditPermission(row) {
-  permissionTarget.value = row
-  permissionForm.clientPermission = row.clientPermission || 'all'
-  showPermissionDialog.value = true
-}
-
-async function handlePermissionSubmit() {
-  submitting.value = true
-  try {
-    await updateUserPermission(permissionTarget.value.id, { clientPermission: permissionForm.clientPermission })
-    permissionTarget.value.clientPermission = permissionForm.clientPermission
-    ElMessage.success('权限修改成功')
-    showPermissionDialog.value = false
-  } catch (e) {
-    ElMessage.error(e?.message || '权限修改失败')
-  } finally {
-    submitting.value = false
-  }
 }
 
 async function handleResetSubmit() {

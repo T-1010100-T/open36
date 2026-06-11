@@ -32,25 +32,25 @@
     <!-- 数据表格 -->
     <el-table :data="list" stripe v-loading="loading">
       <el-table-column prop="enrollmentId" label="报名ID" width="80" />
-      <el-table-column prop="realName" label="姓名" width="90" />
-      <el-table-column prop="username" label="用户名" width="120" />
-      <el-table-column prop="studentId" label="学号" width="130" />
-      <el-table-column prop="major" label="专业" width="140" />
-      <el-table-column label="面试轮次" width="90" align="center">
+      <el-table-column prop="realName" label="姓名" width="100" />
+      <el-table-column prop="username" label="用户名" width="130" />
+      <el-table-column prop="studentId" label="学号" width="140" />
+      <el-table-column prop="major" label="专业" width="150" />
+      <el-table-column label="面试记录" min-width="200" show-overflow-tooltip>
         <template #default="{ row }">
-          <span v-if="row.round">{{ row.round }}</span>
+          <span v-if="row.summary">{{ row.summary }}</span>
           <span v-else style="color:#c0c4cc">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="面试官" width="90">
+      <el-table-column label="意向" width="100">
         <template #default="{ row }">
-          <span v-if="row.interviewer">{{ row.interviewer }}</span>
+          <span v-if="row.direction">{{ row.direction }}</span>
           <span v-else style="color:#c0c4cc">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="评分" width="80" align="center">
+      <el-table-column label="评分" width="90" align="center">
         <template #default="{ row }">
-          <el-tag v-if="row.score" :type="scoreTagType(row.score)" size="small">{{ row.score }}</el-tag>
+          <el-tag v-if="row.score != null" :type="scoreTagType(row.score)" size="small">{{ row.score }}</el-tag>
           <span v-else style="color:#c0c4cc">-</span>
         </template>
       </el-table-column>
@@ -59,14 +59,26 @@
           <el-tag :type="statusTagType[row.status]" size="small">{{ statusLabels[row.status] }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
-          <el-button type="primary" link size="small" @click="openDetail(row)">查看详情</el-button>
-          <el-button type="warning" link size="small" @click="openRecordDialog(row)">面试记录</el-button>
-          <template v-if="row.status === 'pending' || row.status === 'interviewed'">
-            <el-button type="success" link size="small" @click="handleStatusUpdate(row, 'passed')">通过</el-button>
-            <el-button type="danger" link size="small" @click="handleStatusUpdate(row, 'failed')">未通过</el-button>
-          </template>
+          <el-button type="primary" size="small" @click="goEdit(row.enrollmentId)">
+            <el-icon><Edit /></el-icon>编辑
+          </el-button>
+          <el-dropdown v-if="row.status === 'pending'" trigger="click" @command="(cmd) => handleStatusUpdate(row, cmd)">
+            <el-button size="small" link>
+              更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="passed">
+                  <el-icon color="#67c23a"><CircleCheck /></el-icon>面试通过
+                </el-dropdown-item>
+                <el-dropdown-item command="failed" divided>
+                  <el-icon color="#f56c6c"><CircleClose /></el-icon>面试未通过
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </template>
       </el-table-column>
     </el-table>
@@ -78,14 +90,16 @@
     <!-- 详情抽屉 -->
     <el-drawer v-model="drawerVisible" :title="`面试详情 - ${currentItem?.realName || ''}`" size="560px">
       <template v-if="currentItem">
-        <!-- 基本信息 -->
-        <h4 style="margin-bottom:12px">基本信息</h4>
         <el-descriptions :column="2" border>
           <el-descriptions-item label="姓名">{{ currentItem.realName }}</el-descriptions-item>
           <el-descriptions-item label="用户名">{{ currentItem.username }}</el-descriptions-item>
           <el-descriptions-item label="学号">{{ currentItem.studentId }}</el-descriptions-item>
           <el-descriptions-item label="专业">{{ currentItem.major }}</el-descriptions-item>
-          <el-descriptions-item label="联系方式">{{ currentItem.phone }}</el-descriptions-item>
+          <el-descriptions-item label="意向">{{ currentItem.direction || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="评分">
+            <el-tag v-if="currentItem.score != null" :type="scoreTagType(currentItem.score)" size="small">{{ currentItem.score }}/10</el-tag>
+            <span v-else>-</span>
+          </el-descriptions-item>
           <el-descriptions-item label="面试状态">
             <el-tag :type="statusTagType[currentItem.status]" size="small">{{ statusLabels[currentItem.status] }}</el-tag>
           </el-descriptions-item>
@@ -103,100 +117,31 @@
           </div>
         </div>
 
-        <!-- 面试记录时间线 -->
-        <div style="margin-top:20px">
-          <h4 style="margin-bottom:12px">面试记录</h4>
-          <el-empty v-if="!currentItem.rounds?.length" description="暂无面试记录" :image-size="60" />
-          <el-timeline v-else>
-            <el-timeline-item
-              v-for="r in currentItem.rounds"
-              :key="r.id"
-              :timestamp="r.interviewDate"
-              placement="top"
-              :type="roundTimelineType(r.status)">
-              <el-card shadow="never" style="padding:4px">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                  <span><b>第{{ r.round }}轮</b></span>
-                  <el-tag :type="statusTagType[r.status]" size="small">{{ statusLabels[r.status] }}</el-tag>
-                </div>
-                <el-descriptions :column="2" size="small" border>
-                  <el-descriptions-item label="面试官">{{ r.interviewer || '-' }}</el-descriptions-item>
-                  <el-descriptions-item label="评分">
-                    <el-tag v-if="r.score" :type="scoreTagType(r.score)" size="small">{{ r.score }}/10</el-tag>
-                    <span v-else>-</span>
-                  </el-descriptions-item>
-                  <el-descriptions-item label="推荐方向" :span="2">{{ r.direction || '-' }}</el-descriptions-item>
-                </el-descriptions>
-                <div v-if="r.summary" style="margin-top:8px">
-                  <span style="color:#909399;font-size:13px">总结：</span>
-                  <span style="font-size:13px">{{ r.summary }}</span>
-                </div>
-                <div v-if="r.strengths" style="margin-top:4px">
-                  <span style="color:#67c23a;font-size:13px">优点：</span>
-                  <span style="font-size:13px">{{ r.strengths }}</span>
-                </div>
-                <div v-if="r.weaknesses" style="margin-top:4px">
-                  <span style="color:#f56c6c;font-size:13px">不足：</span>
-                  <span style="font-size:13px">{{ r.weaknesses }}</span>
-                </div>
-              </el-card>
-            </el-timeline-item>
-          </el-timeline>
+        <div v-if="currentItem.summary" style="margin-top:16px">
+          <h4 style="margin-bottom:8px">面试记录</h4>
+          <p style="color:#666;line-height:1.8;white-space:pre-wrap">{{ currentItem.summary }}</p>
         </div>
 
-        <!-- 操作按钮 -->
-        <div v-if="currentItem.status === 'pending' || currentItem.status === 'interviewed'" style="margin-top:24px;display:flex;gap:12px">
-          <el-button type="warning" @click="drawerVisible = false; openRecordDialog(currentItem)">新增面试记录</el-button>
-          <el-button type="success" @click="handleStatusUpdate(currentItem, 'passed'); drawerVisible = false">面试通过</el-button>
-          <el-button type="danger" @click="handleStatusUpdate(currentItem, 'failed'); drawerVisible = false">面试未通过</el-button>
+        <div v-if="currentItem.status === 'pending'" style="margin-top:24px;display:flex;gap:12px">
+          <el-button type="primary" size="large" @click="drawerVisible = false; goEdit(currentItem.enrollmentId)">
+            <el-icon><Edit /></el-icon>编辑面试信息
+          </el-button>
+          <el-button type="success" @click="handleStatusUpdate(currentItem, 'passed'); drawerVisible = false">通过</el-button>
+          <el-button type="danger" @click="handleStatusUpdate(currentItem, 'failed'); drawerVisible = false">未通过</el-button>
         </div>
       </template>
     </el-drawer>
-
-    <!-- 面试记录对话框 -->
-    <el-dialog v-model="recordDialogVisible" title="记录面试结果" width="560px" :close-on-click-modal="false">
-      <el-form :model="recordForm" label-width="90px">
-        <el-form-item label="候选人">
-          <span>{{ recordTarget?.realName }} ({{ recordTarget?.studentId }})</span>
-        </el-form-item>
-        <el-form-item label="面试轮次">
-          <el-input-number v-model="recordForm.round" :min="1" :max="10" />
-          <span style="margin-left:8px;color:#909399;font-size:13px">
-            已有 {{ recordTarget?.rounds?.length || 0 }} 轮记录
-          </span>
-        </el-form-item>
-        <el-form-item label="面试官">
-          <el-input v-model="recordForm.interviewer" placeholder="面试官姓名" />
-        </el-form-item>
-        <el-form-item label="评分">
-          <el-rate v-model="recordForm.score" :max="10" show-score />
-        </el-form-item>
-        <el-form-item label="推荐方向">
-          <el-input v-model="recordForm.direction" placeholder="如：前端/后端/算法/运维" />
-        </el-form-item>
-        <el-form-item label="面试总结">
-          <el-input v-model="recordForm.summary" type="textarea" :rows="3" placeholder="综合评价" />
-        </el-form-item>
-        <el-form-item label="优点">
-          <el-input v-model="recordForm.strengths" type="textarea" :rows="2" placeholder="候选人优点" />
-        </el-form-item>
-        <el-form-item label="不足">
-          <el-input v-model="recordForm.weaknesses" type="textarea" :rows="2" placeholder="待改进方面" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="recordDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitRecord">保存记录</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import StatCard from '@/components/StatCard.vue'
-import { getInterviewList, recordInterview, updateInterviewStatus, getInterviewStatistics } from '@/api/interview'
+import { getInterviewList, getInterviewDetail, updateInterviewStatus, getInterviewStatistics } from '@/api/interview'
+
+const router = useRouter()
 
 const loading = ref(false)
 const list = ref([])
@@ -209,32 +154,13 @@ const stats = ref({ total: 0, pending: 0, passed: 0, failed: 0, passRate: 0 })
 const drawerVisible = ref(false)
 const currentItem = ref(null)
 
-const recordDialogVisible = ref(false)
-const recordTarget = ref(null)
-const recordForm = ref({
-  enrollmentId: null,
-  round: 1,
-  interviewer: '',
-  score: 0,
-  direction: '',
-  summary: '',
-  strengths: '',
-  weaknesses: ''
-})
-
-const statusLabels = { pending: '待面试', passed: '已通过', failed: '未通过', interviewed: '面试中' }
-const statusTagType = { pending: 'warning', passed: 'success', failed: 'danger', interviewed: '' }
+const statusLabels = { pending: '待面试', passed: '已通过', failed: '未通过' }
+const statusTagType = { pending: 'warning', passed: 'success', failed: 'danger' }
 
 function scoreTagType(score) {
   if (score >= 8) return 'success'
   if (score >= 5) return 'warning'
   return 'danger'
-}
-
-function roundTimelineType(status) {
-  if (status === 'passed') return 'success'
-  if (status === 'failed') return 'danger'
-  return 'warning'
 }
 
 async function loadStats() {
@@ -265,55 +191,18 @@ async function openDetail(row) {
     const res = await getInterviewDetail(row.enrollmentId)
     currentItem.value = res.data
     drawerVisible.value = true
-  } catch (e) {
+  } catch {
     ElMessage.error('加载详情失败')
   }
 }
 
-function openRecordDialog(row) {
-  recordTarget.value = row
-  recordForm.value = {
-    enrollmentId: row.enrollmentId,
-    round: (row.rounds?.length || 0) + 1,
-    interviewer: '',
-    score: 0,
-    direction: '',
-    summary: '',
-    strengths: '',
-    weaknesses: ''
-  }
-  recordDialogVisible.value = true
-}
-
-async function submitRecord() {
-  const form = recordForm.value
-  if (!form.summary && !form.score) {
-    ElMessage.warning('请至少填写评分或面试总结')
-    return
-  }
-  try {
-    await recordInterview({
-      enrollmentId: form.enrollmentId,
-      round: form.round,
-      interviewer: form.interviewer,
-      score: form.score || null,
-      direction: form.direction,
-      summary: form.summary,
-      strengths: form.strengths,
-      weaknesses: form.weaknesses
-    })
-    ElMessage.success('面试记录已保存')
-    recordDialogVisible.value = false
-    loadList()
-    loadStats()
-  } catch (e) {
-    ElMessage.error('保存失败')
-  }
+function goEdit(enrollmentId) {
+  router.push(`/enrollment/interview/edit/${enrollmentId}`)
 }
 
 async function handleStatusUpdate(row, status) {
   if (!row.id) {
-    ElMessage.warning('该候选人暂无面试记录，请先记录面试结果')
+    ElMessage.warning('该候选人暂无面试记录，请先编辑面试信息')
     return
   }
   const label = status === 'passed' ? '通过' : '不通过'

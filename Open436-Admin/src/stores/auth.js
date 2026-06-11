@@ -39,7 +39,7 @@ export const useAuthStore = defineStore('auth', () => {
           username: user.value?.username || '',
           nickname: user.value?.realName || user.value?.username || '',
           avatar: user.value?.avatar || '',
-          roleList: user.value?.role === 'admin' ? ['admin'] : ['user']
+          roleList: user.value?.role === 'admin' ? ['root', 'admin'] : ['user']
         }
         localStorage.setItem('userInfo', JSON.stringify(hojUserInfo))
         // 写入 open436_token，供 HOJ 统一登出检测使用
