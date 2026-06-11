@@ -167,4 +167,57 @@ public class AssignmentController {
         assignmentService.sendReminder(submissionId);
         return ResponseEntity.ok(ApiResponse.success());
     }
+
+    /** 查询当前用户被分配的作业（客户端用） */
+    @GetMapping("/my")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> myAssignments(HttpServletRequest request) {
+        Long userId = getCurrentUserId(request);
+        List<Map<String, Object>> result = assignmentService.getMyAssignments(userId);
+        return ResponseEntity.ok(ApiResponse.success(result));
+    }
+
+    /** 查询单个作业详情（客户端用） */
+    @GetMapping("/my/{assignmentId}")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> myAssignmentDetail(
+            @PathVariable Long assignmentId, HttpServletRequest request) {
+        Long userId = getCurrentUserId(request);
+        Map<String, Object> result = assignmentService.getMyAssignmentDetail(userId, assignmentId);
+        return ResponseEntity.ok(ApiResponse.success(result));
+    }
+
+    /** 提交作业（客户端用） */
+    @PostMapping("/my/{assignmentId}/submit")
+    public ResponseEntity<ApiResponse<Void>> submitAssignment(
+            @PathVariable Long assignmentId,
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest request) {
+        Long userId = getCurrentUserId(request);
+        String content = (String) body.getOrDefault("content", "");
+        @SuppressWarnings("unchecked")
+        List<String> files = (List<String>) body.get("files");
+        assignmentService.submitAssignment(userId, assignmentId, content, files);
+        return ResponseEntity.ok(ApiResponse.success());
+    }
+
+    private Long getCurrentUserId(HttpServletRequest request) {
+        String token = request.getHeader("token");
+        if (token == null || token.isEmpty()) throw new RuntimeException("未登录");
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("token", token);
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        try {
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    authServiceUrl + "/api/auth/current", HttpMethod.GET, entity, Map.class);
+            Map<String, Object> body = response.getBody();
+            if (body == null || body.get("data") == null) throw new RuntimeException("鉴权失败");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = (Map<String, Object>) body.get("data");
+            Object id = data.get("id");
+            return id != null ? ((Number) id).longValue() : null;
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("鉴权失败: " + e.getMessage());
+        }
+    }
 }

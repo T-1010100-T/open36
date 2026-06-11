@@ -39,4 +39,9 @@ public interface AssignmentSubmissionRepository extends JpaRepository<Assignment
      * 统计某个作业的已提交人数
      */
     long countByAssignmentIdAndStatus(Long assignmentId, String status);
+
+    /**
+     * 查询某个学生的所有提交记录
+     */
+    List<AssignmentSubmission> findByStudentId(Long studentId);
 }

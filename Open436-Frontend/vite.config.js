@@ -28,21 +28,25 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true
       },
+      '/api/assignment': {
+        target: 'http://localhost:8084',
+        changeOrigin: true
+      },
       '/api/posts': {
         target: 'http://localhost:8003',
         changeOrigin: true
       },
       '/api/sections': {
-        target: 'http://localhost:8005',
+        target: 'http://localhost:8003',
         changeOrigin: true
       },
       '/api/comments': {
-        target: 'http://localhost:8004',
+        target: 'http://localhost:8003',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/comments/, '/api')
       },
       '/api/users': {
-        target: 'http://localhost:8002',
+        target: 'http://localhost:8081',
         changeOrigin: true
       },
       '/api': {

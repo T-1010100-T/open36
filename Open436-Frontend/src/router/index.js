@@ -36,6 +36,8 @@ const routes = [
   { path: '/quiz', name: 'Quiz', component: () => import('@/views/Quiz.vue'), meta: { title: '算法' } },
   { path: '/enroll', name: 'Enroll', component: () => import('@/views/Enroll.vue'), meta: { title: '报名加入' } },
   { path: '/mine', name: 'Mine', component: () => import('@/views/Mine.vue'), meta: { title: '我的', auth: true } },
+  { path: '/mine/edit', name: 'MineEdit', component: () => import('@/views/MineEdit.vue'), meta: { title: '编辑资料', auth: true } },
+  { path: '/assignment/:id', name: 'AssignmentSubmit', component: () => import('@/views/AssignmentSubmit.vue'), meta: { title: '作业提交', auth: true } },
   { path: '/:pathMatch(.*)*', redirect: '/' }
 ]
 

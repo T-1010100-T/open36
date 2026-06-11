@@ -47,4 +47,15 @@ public interface AssignmentAllocationRepository extends JpaRepository<Assignment
      * 统计某个作业的分配人数
      */
     long countByAssignmentId(Long assignmentId);
+
+    /**
+     * 查询某个学生被分配的所有作业ID
+     */
+    @Query("SELECT aa.assignmentId FROM AssignmentAllocation aa WHERE aa.studentId = :studentId ORDER BY aa.assignedAt DESC")
+    List<Long> findAssignmentIdsByStudentId(@Param("studentId") Long studentId);
+
+    /**
+     * 查询某个学生被分配的所有作业记录
+     */
+    List<AssignmentAllocation> findByStudentIdOrderByAssignedAtDesc(Long studentId);
 }

@@ -354,6 +354,128 @@ public class AssignmentService {
                 s.getAssignmentId(), s.getStudentId(), s.getStudentName());
     }
 
+    /**
+     * 查询当前用户被分配的作业列表（客户端用）
+     */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getMyAssignments(Long studentId) {
+        // 查询该学生被分配的所有作业
+        List<AssignmentAllocation> allocations = allocationRepository.findByStudentIdOrderByAssignedAtDesc(studentId);
+        if (allocations.isEmpty()) return Collections.emptyList();
+
+        // 获取作业详情
+        List<Long> assignmentIds = allocations.stream()
+                .map(AssignmentAllocation::getAssignmentId)
+                .toList();
+        List<Assignment> assignments = assignmentRepository.findAllById(assignmentIds);
+        Map<Long, Assignment> assignmentMap = assignments.stream()
+                .collect(Collectors.toMap(Assignment::getId, a -> a, (a, b) -> a));
+
+        // 查询提交状态
+        List<AssignmentSubmission> submissions = submissionRepository.findByStudentId(studentId);
+        Map<Long, AssignmentSubmission> submissionMap = submissions.stream()
+                .collect(Collectors.toMap(AssignmentSubmission::getAssignmentId, s -> s, (a, b) -> a));
+
+        // 组装结果
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (AssignmentAllocation alloc : allocations) {
+            Assignment assignment = assignmentMap.get(alloc.getAssignmentId());
+            if (assignment == null) continue;
+
+            AssignmentSubmission submission = submissionMap.get(assignment.getId());
+
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", alloc.getId());
+            item.put("assignmentId", assignment.getId());
+            item.put("title", assignment.getTitle());
+            item.put("description", assignment.getDescription());
+            item.put("deadline", assignment.getDeadline());
+            item.put("status", assignment.getStatus());
+            item.put("assignedAt", alloc.getAssignedAt());
+            item.put("submissionStatus", submission != null ? submission.getStatus() : "unsubmitted");
+            item.put("submittedAt", submission != null ? submission.getSubmittedAt() : null);
+            item.put("read", submission != null && "submitted".equals(submission.getStatus())); // 已提交视为已读
+            result.add(item);
+        }
+        return result;
+    }
+
+    /**
+     * 查询单个作业详情（客户端用）
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getMyAssignmentDetail(Long studentId, Long assignmentId) {
+        // 验证是否分配了该作业
+        AssignmentAllocation allocation = allocationRepository.findByAssignmentIdAndStudentId(assignmentId, studentId)
+                .orElseThrow(() -> new RuntimeException("未分配该作业"));
+
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new RuntimeException("作业不存在"));
+
+        // 查询提交记录
+        AssignmentSubmission submission = submissionRepository.findByAssignmentIdAndStudentId(assignmentId, studentId)
+                .orElse(null);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("assignmentId", assignment.getId());
+        result.put("title", assignment.getTitle());
+        result.put("description", assignment.getDescription());
+        result.put("deadline", assignment.getDeadline());
+        result.put("status", assignment.getStatus());
+        result.put("assignedAt", allocation.getAssignedAt());
+        result.put("submissionStatus", submission != null ? submission.getStatus() : "unsubmitted");
+        result.put("content", submission != null ? submission.getContent() : "");
+        result.put("files", submission != null ? parseFiles(submission.getFilePaths()) : Collections.emptyList());
+        result.put("submittedAt", submission != null ? submission.getSubmittedAt() : null);
+        return result;
+    }
+
+    /**
+     * 提交作业（客户端用）
+     */
+    @Transactional
+    public void submitAssignment(Long studentId, Long assignmentId, String content, List<String> files) {
+        // 验证是否分配了该作业
+        AssignmentAllocation allocation = allocationRepository.findByAssignmentIdAndStudentId(assignmentId, studentId)
+                .orElseThrow(() -> new RuntimeException("未分配该作业"));
+
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new RuntimeException("作业不存在"));
+
+        // 检查是否已截止
+        if ("ended".equals(assignment.getStatus())) {
+            throw new RuntimeException("作业已截止，无法提交");
+        }
+
+        // 查找或创建提交记录
+        AssignmentSubmission submission = submissionRepository.findByAssignmentIdAndStudentId(assignmentId, studentId)
+                .orElse(AssignmentSubmission.builder()
+                        .assignmentId(assignmentId)
+                        .studentId(studentId)
+                        .studentName(allocation.getStudentName())
+                        .studentNo(allocation.getStudentNo())
+                        .major(allocation.getMajor())
+                        .direction(allocation.getDirection())
+                        .status("unsubmitted")
+                        .build());
+
+        // 更新提交内容
+        submission.setContent(content);
+        if (files != null && !files.isEmpty()) {
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                submission.setFilePaths(mapper.writeValueAsString(files));
+            } catch (Exception e) {
+                log.error("序列化文件路径失败", e);
+            }
+        }
+        submission.setStatus("submitted");
+        submission.setSubmittedAt(LocalDateTime.now());
+
+        submissionRepository.save(submission);
+        log.info("作业提交成功: assignmentId={}, studentId={}", assignmentId, studentId);
+    }
+
     // ==================== 工具方法 ====================
 
     private void autoExpireAssignments() {
